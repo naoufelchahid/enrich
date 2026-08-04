@@ -15,6 +15,8 @@ def sanitize_phone(phone):
         return ""
     if cleaned.startswith('+'):
         return cleaned
+    if cleaned.startswith('00212'):
+        return '+' + cleaned[2:]
     if cleaned.startswith('212'):
         return '+' + cleaned
     if cleaned.startswith('0'):
@@ -56,8 +58,8 @@ def group_company_data(filepath: str) -> dict:
         email = str(row.get('E-mail', '')).strip() if is_valid_str(row.get('E-mail')) else ""
         
         parts = prenom_nom.split(' ', 1)
-        first_name = parts[0] if len(parts) > 0 else ""
-        last_name = parts[1] if len(parts) > 1 else ""
+        first_name = parts[0].strip() if len(parts) > 0 else ""
+        last_name = parts[1].strip() if len(parts) > 1 else ""
         if g:
             first_name = f"{g} {first_name}".strip()
         
@@ -88,6 +90,10 @@ def main():
             continue
         
         comp_id = company_res.get('id')
+        if not comp_id:
+            logger.error(f"No company ID returned for {data['original_name']}")
+            continue
+
         for p in data["people"]:
             payload = {
                 "name": {"firstName": p["firstName"], "lastName": p["lastName"]},

@@ -6,6 +6,7 @@ from import_clean import group_company_data, sanitize_phone, process_excel_data,
 def test_sanitize_phone():
     assert sanitize_phone("0612345678") == "+212612345678"
     assert sanitize_phone("06 12 34 56 78") == "+212612345678"
+    assert sanitize_phone("00212612345678") == "+212612345678"
     assert sanitize_phone("212512345678") == "+212512345678"
     assert sanitize_phone("+212612345678") == "+212612345678"
     assert sanitize_phone(None) == ""
@@ -56,7 +57,7 @@ def test_main_import_flow(mock_crm_cls, tmp_path, monkeypatch):
     df = pd.DataFrame({
         "Société": ["ACME Corp"],
         "G": ["M."],
-        "Prénom et Nom": ["Alice Smith"],
+        "Prénom et Nom": ["Alice  Smith "],
         "Fonction": ["Director"],
         "TEL": ["0611223344"],
         "E-mail": ["alice@acme.com"]
@@ -64,9 +65,8 @@ def test_main_import_flow(mock_crm_cls, tmp_path, monkeypatch):
     test_file = tmp_path / "BDD6.xls"
     df.to_excel(test_file, index=False)
     
-    with patch("import_clean.group_company_data", wraps=group_company_data) as mock_group:
-        with patch.object(pd, "read_excel", return_value=df):
-            main()
+    with patch.object(pd, "read_excel", return_value=df):
+        main()
             
     mock_crm_instance.create_company.assert_called_once_with({"name": "ACME Corp"})
     mock_crm_instance.create_person.assert_called_once_with({
@@ -76,3 +76,29 @@ def test_main_import_flow(mock_crm_cls, tmp_path, monkeypatch):
         "emails": {"primaryEmail": "alice@acme.com"},
         "phones": {"primaryPhoneNumber": "+212611223344"}
     })
+
+@patch("import_clean.TwentyCRMClient")
+def test_main_import_flow_missing_comp_id(mock_crm_cls, tmp_path, monkeypatch):
+    monkeypatch.setenv("TWENTY_API_KEY", "fake_key")
+    monkeypatch.setenv("TWENTY_API_BASE_URL", "http://fake-crm/rest")
+    
+    mock_crm_instance = MagicMock()
+    mock_crm_cls.return_value = mock_crm_instance
+    # Response without 'id'
+    mock_crm_instance.create_company.return_value = {"name": "NoID Corp"}
+    
+    df = pd.DataFrame({
+        "Société": ["NoID Corp"],
+        "G": [""],
+        "Prénom et Nom": ["Bob Builder"],
+        "Fonction": ["Worker"],
+        "TEL": ["0611223344"],
+        "E-mail": ["bob@noid.com"]
+    })
+    
+    with patch.object(pd, "read_excel", return_value=df):
+        main()
+            
+    mock_crm_instance.create_company.assert_called_once_with({"name": "NoID Corp"})
+    mock_crm_instance.create_person.assert_not_called()
+
