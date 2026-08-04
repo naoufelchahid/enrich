@@ -41,10 +41,11 @@ def main():
         return
 
     crm = TwentyCRMClient(api_url, api_key)
-    kerix = KerixScraper(cloak_key, headless=True)
+    kerix = None
     charika = CharikaScraper()
 
     try:
+        kerix = KerixScraper(cloak_key, headless=True)
         companies = crm.list_companies(limit=args.limit)
         logger.info(f"Fetched {len(companies)} companies from CRM.")
 
@@ -83,7 +84,8 @@ def main():
                     
                 crm.add_note(comp_id, "Enrichment Source Data", f"LLM Output:\n{json.dumps(enriched_data, indent=2)}")
     finally:
-        kerix.close()
+        if kerix:
+            kerix.close()
 
 if __name__ == "__main__":
     main()
