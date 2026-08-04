@@ -5,6 +5,7 @@ import logging
 import json
 import re
 from typing import Dict, Any, Optional
+import requests
 from bs4 import BeautifulSoup
 from cloakbrowser import launch
 
@@ -260,3 +261,27 @@ class KerixScraper:
         logger.info(f"Scraped JSON result for '{company_name}':\n{json_output}")
 
         return result
+
+
+class CharikaScraper:
+    def __init__(self, headless=True):
+        pass # Not using CloakBrowser for Charika by default unless needed, using simple requests for test
+
+    def scrape_company(self, name: str) -> dict:
+        """Fallback simple scraper for charika.ma"""
+        # In a real scenario, this requires proper selector logic. 
+        # Providing minimal structural stub for testing.
+        url = f"https://www.charika.ma/societe-{name.replace(' ', '-')}"
+        data = {}
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                text = soup.get_text()
+                ice_match = re.search(r'ICE[^\d]*(\d{9,15})', text, re.IGNORECASE)
+                if ice_match:
+                    data['ice'] = ice_match.group(1)
+        except Exception as e:
+            logger.error(f"Charika scrape failed: {e}")
+        return data
+
