@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trigger Eval Query Review - __SKILL_NAME_PLACEHOLDER__</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            padding: 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 { color: #38bdf8; }
+        .card {
+            background-color: #1e293b;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            border: 1px solid #475569;
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #475569; }
+        th { background-color: #334155; }
+        input[type="text"] {
+            width: 90%;
+            background-color: #0f172a;
+            color: #fff;
+            border: 1px solid #475569;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .export-btn {
+            background-color: #38bdf8;
+            color: #000;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Trigger Eval Review: __SKILL_NAME_PLACEHOLDER__</h1>
+    <div class="card">
+        <h3>Current Description</h3>
+        <p style="font-family: monospace; background: #0f172a; padding: 1rem; border-radius: 6px;">__SKILL_DESCRIPTION_PLACEHOLDER__</p>
+    </div>
+
+    <div class="card">
+        <h3>Trigger Test Queries</h3>
+        <table id="eval-table">
+            <thead>
+                <tr>
+                    <th>Query Text</th>
+                    <th>Should Trigger?</th>
+                </tr>
+            </thead>
+            <tbody id="eval-body"></tbody>
+        </table>
+        <br>
+        <button class="export-btn" onclick="exportEvalSet()">Export Eval Set</button>
+    </div>
+
+    <script>
+        const evalData = __EVAL_DATA_PLACEHOLDER__;
+
+        function render() {
+            const body = document.getElementById("eval-body");
+            body.innerHTML = "";
+            evalData.forEach((item, idx) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td><input type="text" value="${escapeHtml(item.query)}" onchange="evalData[${idx}].query = this.value"></td>
+                    <td><input type="checkbox" ${item.should_trigger ? "checked" : ""} onchange="evalData[${idx}].should_trigger = this.checked"></td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        function exportEvalSet() {
+            const jsonStr = JSON.stringify(evalData, null, 2);
+            const blob = new Blob([jsonStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "eval_set.json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            alert("Eval set exported to eval_set.json!");
+        }
+
+        render();
+    </script>
+</body>
+</html>
