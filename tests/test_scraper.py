@@ -14,7 +14,29 @@ def test_charika_scraper_success(mock_get):
     res = scraper.scrape_company("Test Company")
     
     assert res["ice"] == "987654321"
-    mock_get.assert_called_once_with("https://www.charika.ma/societe-Test-Company", timeout=10)
+    mock_get.assert_called_once_with(
+        "https://www.charika.ma/societe-Test-Company",
+        headers={"User-Agent": CharikaScraper.DEFAULT_USER_AGENT},
+        timeout=10
+    )
+
+@patch('enricher.scraper.requests.get')
+def test_charika_scraper_sanitization_and_encoding(mock_get):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = '<html><body>ICE: 111222333</body></html>'
+    mock_get.return_value = mock_resp
+    
+    scraper = CharikaScraper()
+    res = scraper.scrape_company("Société Extra & Co., SARL")
+    
+    assert res["ice"] == "111222333"
+    # Legal entity suffix 'SARL' stripped, company name sanitized, URL encoded
+    mock_get.assert_called_once_with(
+        "https://www.charika.ma/societe-Soci%C3%A9t%C3%A9-Extra-Co",
+        headers={"User-Agent": CharikaScraper.DEFAULT_USER_AGENT},
+        timeout=10
+    )
 
 @patch('enricher.scraper.requests.get')
 def test_charika_scraper_no_ice(mock_get):
@@ -49,3 +71,4 @@ def test_charika_scraper_exception(mock_get):
     res = scraper.scrape_company("Test Company")
     
     assert res == {}
+

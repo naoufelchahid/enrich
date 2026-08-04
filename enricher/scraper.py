@@ -264,17 +264,26 @@ class KerixScraper:
 
 
 class CharikaScraper:
+    DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
     def __init__(self, headless=True):
         pass # Not using CloakBrowser for Charika by default unless needed, using simple requests for test
 
     def scrape_company(self, name: str) -> dict:
         """Fallback simple scraper for charika.ma"""
-        # In a real scenario, this requires proper selector logic. 
-        # Providing minimal structural stub for testing.
-        url = f"https://www.charika.ma/societe-{name.replace(' ', '-')}"
+        clean_name = clean_company_name(name)
+        if not clean_name:
+            clean_name = name.strip()
+        sanitized_name = re.sub(r'[^\w\s\-]', '', clean_name)
+        slug = re.sub(r'\s+', '-', sanitized_name.strip())
+        encoded_slug = urllib.parse.quote(slug)
+        url = f"https://www.charika.ma/societe-{encoded_slug}"
         data = {}
+        headers = {
+            "User-Agent": self.DEFAULT_USER_AGENT
+        }
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, 'html.parser')
                 text = soup.get_text()
@@ -284,4 +293,6 @@ class CharikaScraper:
         except Exception as e:
             logger.error(f"Charika scrape failed: {e}")
         return data
+
+
 
