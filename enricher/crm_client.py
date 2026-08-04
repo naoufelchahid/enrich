@@ -130,3 +130,18 @@ class TwentyCRMClient:
         except Exception as e:
             logger.error(f"Error adding note to company {company_id}: {e}")
         return False
+
+    def list_companies(self, limit: int = 50) -> list:
+        """Fetch a list of companies from Twenty CRM."""
+        url = f"{self.api_base_url}/companies"
+        params = {"limit": limit}
+        try:
+            resp = requests.get(url, headers=self.headers, params=params)
+            if resp.status_code == 200:
+                return resp.json().get("data", {}).get("companies", [])
+            else:
+                logger.warning(f"Failed to list companies [{resp.status_code}]: {resp.text}")
+        except Exception as e:
+            logger.error(f"Error listing companies: {e}")
+        return []
+
