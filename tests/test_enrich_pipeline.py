@@ -12,7 +12,7 @@ def test_fetch_google_ai_digest():
 @patch.dict(os.environ, {}, clear=True)
 def test_main_missing_env_vars():
     with patch("enrich_pipeline.logger.error") as mock_log_error:
-        enrich_pipeline.main()
+        enrich_pipeline.main([])
         mock_log_error.assert_called_once()
         assert "Missing required environment variables" in mock_log_error.call_args[0][0]
 
@@ -27,7 +27,7 @@ def test_main_missing_env_vars():
 def test_main_kerix_init_exception(mock_charika_cls, mock_kerix_cls, mock_crm_cls):
     mock_kerix_cls.side_effect = RuntimeError("Failed to launch browser")
     with pytest.raises(RuntimeError, match="Failed to launch browser"):
-        enrich_pipeline.main()
+        enrich_pipeline.main([])
 
 @patch.dict(os.environ, {
     "TWENTY_API_KEY": "test_key",

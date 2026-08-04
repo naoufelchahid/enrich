@@ -2,17 +2,7 @@ import os
 import json
 import logging
 import argparse
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    def load_dotenv():
-        if os.path.exists(".env"):
-            with open(".env") as f:
-                for line in f:
-                    if line.strip() and not line.startswith("#") and "=" in line:
-                        k, v = line.strip().split("=", 1)
-                        os.environ.setdefault(k, v)
+from dotenv import load_dotenv
 
 from enricher.crm_client import TwentyCRMClient
 from enricher.ai_extractor import extract_company_data
@@ -25,11 +15,11 @@ def fetch_google_ai_digest(company_name, license_key):
     # Stub: Normally uses CloakBrowser here.
     return f"Google AI Digest says {company_name} ICE is 000000000000000 and RC is 99999 located in Casablanca."
 
-def main():
+def main(argv=None):
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=5)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     api_url = os.environ.get("TWENTY_API_BASE_URL", "http://localhost:3005/rest")
     api_key = os.environ.get("TWENTY_API_KEY")
