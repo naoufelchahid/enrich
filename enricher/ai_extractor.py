@@ -1,6 +1,9 @@
+import logging
 import google.generativeai as genai
 import json
 import re
+
+logger = logging.getLogger(__name__)
 
 def extract_company_data(text: str, api_key: str) -> dict:
     genai.configure(api_key=api_key)
@@ -28,5 +31,6 @@ def extract_company_data(text: str, api_key: str) -> dict:
             json_str = match.group(1)
         return json.loads(json_str)
     except Exception as e:
-        print(f"LLM Extraction failed: {e}")
+        logger.error(f"LLM Extraction failed: {e}")
         return {}
+
