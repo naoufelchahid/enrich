@@ -102,3 +102,27 @@ def test_main_import_flow_missing_comp_id(mock_crm_cls, tmp_path, monkeypatch):
     mock_crm_instance.create_company.assert_called_once_with({"name": "NoID Corp"})
     mock_crm_instance.create_person.assert_not_called()
 
+@patch("import_clean.TwentyCRMClient")
+def test_main_import_flow_custom_arg(mock_crm_cls, tmp_path, monkeypatch):
+    monkeypatch.setenv("TWENTY_API_KEY", "fake_key")
+    
+    mock_crm_instance = MagicMock()
+    mock_crm_cls.return_value = mock_crm_instance
+    mock_crm_instance.create_company.return_value = {"id": "comp_999"}
+    
+    custom_file = tmp_path / "custom.xlsx"
+    df = pd.DataFrame({
+        "Société": ["Custom Corp"],
+        "G": [""],
+        "Prénom et Nom": ["Charlie Brown"],
+        "Fonction": ["Lead"],
+        "TEL": ["0655443322"],
+        "E-mail": ["charlie@custom.com"]
+    })
+    df.to_excel(custom_file, index=False)
+    
+    with patch("import_clean.group_company_data", side_effect=group_company_data) as mock_group:
+        main([str(custom_file)])
+        mock_group.assert_called_once_with(str(custom_file))
+
+

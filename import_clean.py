@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import argparse
 import pandas as pd
 from enricher.crm_client import TwentyCRMClient
 
@@ -74,7 +75,11 @@ def group_company_data(filepath: str) -> dict:
 
 process_excel_data = group_company_data
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Import clean company data into Twenty CRM")
+    parser.add_argument("filepath", nargs="?", default="by_direction/bdd/BDD6.xls", help="Path to Excel file")
+    args = parser.parse_args(argv)
+
     api_url = os.environ.get("TWENTY_API_BASE_URL", "http://localhost:3005/rest")
     api_key = os.environ.get("TWENTY_API_KEY")
     if not api_key:
@@ -82,7 +87,7 @@ def main():
         return
         
     crm = TwentyCRMClient(api_url, api_key)
-    grouped_data = group_company_data("by_direction/bdd/BDD6.xls")
+    grouped_data = group_company_data(args.filepath)
     
     for norm_name, data in grouped_data.items():
         company_res = crm.create_company({"name": data["original_name"]})
@@ -110,3 +115,4 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
     main()
+
