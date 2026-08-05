@@ -1,9 +1,11 @@
 import os
 import pandas as pd
 import logging
-import math
 import re
+import argparse
 from enricher.crm_client import TwentyCRMClient
+
+MAX_OUTREACH_LIMIT = 10
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -43,6 +45,12 @@ def load_env():
                     os.environ[k] = v
 
 def main():
+    parser = argparse.ArgumentParser(description="Import BDD data into Twenty CRM")
+    parser.add_argument("--limit", type=int, default=MAX_OUTREACH_LIMIT, help="Maximum number of records to import")
+    args = parser.parse_args()
+    
+    limit = min(args.limit, MAX_OUTREACH_LIMIT)
+
     load_env()
     api_url = os.environ.get("TWENTY_API_BASE_URL", "http://localhost:3005/rest")
     api_key = os.environ.get("TWENTY_API_KEY")
@@ -61,7 +69,7 @@ def main():
         return
         
     processed_count = 0
-    for index, row in df.iterrows():
+    for _, row in df.iterrows():
         societe = row.get('Société')
         if not is_valid_str(societe):
             continue
@@ -98,7 +106,10 @@ def main():
             first_name = f"{g} {first_name}".strip()
             
         # Create company
-        company_data = {"name": societe}
+        company_data = {
+            "name": societe,
+            "enrichmentStatus": "pending"
+        }
         company_res = crm.create_company(company_data)
         
         if not company_res:
@@ -114,6 +125,7 @@ def main():
                 "lastName": last_name
             },
             "jobTitle": fonction,
+            "enrichmentStatus": "pending"
         }
         
         if email:
@@ -128,8 +140,8 @@ def main():
         logger.info(f"Successfully processed {prenom_nom} at {societe}")
         
         processed_count += 1
-        if processed_count >= 10:
-            logger.info("Reached limit of 10 entries. Exiting.")
+        if processed_count >= limit:
+            logger.info(f"Reached limit of {limit} entries. Exiting.")
             break
 
 if __name__ == "__main__":
