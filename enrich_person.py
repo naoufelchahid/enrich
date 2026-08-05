@@ -14,36 +14,12 @@ PERSON_LIMIT = 10
 def get_pending_people(crm: TwentyCRMClient) -> List[Dict[str, Any]]:
     """
     Fetch people whose enrichmentStatus is 'pending'.
-    We also only want people whose associated company has enrichmentStatus == 'company_enriched'.
-    Due to CRM filtering limitations, we'll fetch 'pending' people and filter locally or 
-    assume we can filter both.
     """
-    people = crm.list_people(limit=50, filters={"enrichmentStatus": "pending"})
-    valid_people = []
-    
-    for person in people:
-        company_id = person.get("companyId")
-        if not company_id:
-            continue
-            
-        # We need to verify the company status
-        # A lightweight way is to search/get the company
-        # However list_companies allows filtering by id? TwentyCRMClient currently doesn't have get_company by ID easily, 
-        # let's just fetch company by name or ID. Let's add a quick get_company if needed, or rely on list_companies.
-        # Wait, the prompt says: "You might need to resolve how to filter by the associated company's status being 'company_enriched' — either via the CRM filter API or by fetching 'pending' people and checking their companyId's status".
-        # Let's fetch companies with 'company_enriched' first and then their people? Or fetch pending people, then fetch their company.
-        # Let's fetch companies that are company_enriched. But we might hit limits.
-        
-        valid_people.append(person)
-        if len(valid_people) >= PERSON_LIMIT:
-            break
-            
-    # For now, to be safe and avoid many API calls if we don't have to, let's just fetch company if needed.
-    # Actually, we can fetch the company using search_company or a similar method if we know the name, 
-    # or just list_companies with id filter.
-    return valid_people
+    # Fetch a large number of pending people to avoid getting stuck on unenriched companies
+    return crm.list_people(limit=1000, filters={"enrichmentStatus": "pending"})
 
-def process_person(crm: TwentyCRMClient, scraper: LinkedInScraper, person: Dict[str, Any]):
+def process_person(crm: TwentyCRMClient, scraper: LinkedInScraper, person: Dict[str, Any]) -> bool:
+    """Processes a person. Returns True if the person was actually processed (enriched or failed), False if skipped."""
     person_id = person.get("id")
     first_name = person.get("name", {}).get("firstName", "")
     last_name = person.get("name", {}).get("lastName", "")
@@ -53,7 +29,7 @@ def process_person(crm: TwentyCRMClient, scraper: LinkedInScraper, person: Dict[
     if not company_id:
         logger.warning(f"Person {full_name} has no companyId. Marking as not_found.")
         crm.update_person(person_id, {"enrichmentStatus": "not_found"})
-        return
+        return True
 
     # To get company name, we need to fetch the company
     # We will use list_companies with filter id=company_id
@@ -61,12 +37,12 @@ def process_person(crm: TwentyCRMClient, scraper: LinkedInScraper, person: Dict[
     if not companies:
         logger.warning(f"Company ID {company_id} not found for {full_name}. Marking as not_found.")
         crm.update_person(person_id, {"enrichmentStatus": "not_found"})
-        return
+        return True
         
     company = companies[0]
     if company.get("enrichmentStatus") != "company_enriched":
         logger.info(f"Person {full_name}'s company is not 'company_enriched' yet. Skipping.")
-        return
+        return False
 
     company_name = company.get("name", "")
     
@@ -92,23 +68,29 @@ def process_person(crm: TwentyCRMClient, scraper: LinkedInScraper, person: Dict[
             if headline:
                 note_body += f"\n**Headline:** {headline}"
                 
+            bio = data.get("bio")
+            if bio:
+                note_body += f"\n\n**Bio / Experience Extracted:**\n{bio}"
+                
             crm.add_person_note(person_id, "LinkedIn Enrichment Data", note_body)
             logger.info(f"Successfully enriched {full_name}")
         else:
             logger.info(f"No LinkedIn data found for {full_name}")
             crm.update_person(person_id, {"enrichmentStatus": "not_found"})
             
+        return True
     except Exception as e:
         logger.error(f"Failed to enrich person {full_name}: {e}")
         crm.update_person(person_id, {"enrichmentStatus": "failed"})
+        return True
 
 def main():
-    api_url = os.getenv("TWENTY_API_URL")
+    api_url = os.getenv("TWENTY_API_BASE_URL")
     api_key = os.getenv("TWENTY_API_KEY")
-    cloak_key = os.getenv("CLOAKBROWSER_KEY")
+    cloak_key = os.getenv("CLOAKBROWSER_LICENSE_KEY")
     
     if not all([api_url, api_key, cloak_key]):
-        logger.error("Missing required environment variables (TWENTY_API_URL, TWENTY_API_KEY, CLOAKBROWSER_KEY).")
+        logger.error("Missing required environment variables (TWENTY_API_BASE_URL, TWENTY_API_KEY, CLOAKBROWSER_LICENSE_KEY).")
         sys.exit(1)
         
     crm = TwentyCRMClient(api_url, api_key)
@@ -116,10 +98,17 @@ def main():
     
     try:
         people_to_process = get_pending_people(crm)
-        logger.info(f"Found {len(people_to_process)} people to process.")
+        logger.info(f"Found {len(people_to_process)} pending people.")
         
+        processed_count = 0
         for person in people_to_process:
-            process_person(crm, scraper, person)
+            if processed_count >= PERSON_LIMIT:
+                logger.info(f"Reached PERSON_LIMIT of {PERSON_LIMIT} processed people.")
+                break
+                
+            was_processed = process_person(crm, scraper, person)
+            if was_processed:
+                processed_count += 1
     finally:
         scraper.close()
 

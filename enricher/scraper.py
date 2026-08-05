@@ -346,6 +346,19 @@ class LinkedInScraper:
                 result["linkedin_url"] = target_url
                 if headline:
                     result["headline"] = headline.replace(" - LinkedIn", "").strip()
+                    
+                try:
+                    logger.info(f"Visiting LinkedIn profile: {target_url}")
+                    page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
+                    page.wait_for_timeout(3000)
+                    
+                    bio_text = page.evaluate("document.body.innerText")
+                    if bio_text:
+                        import re
+                        clean_bio = re.sub(r'\s+', ' ', bio_text).strip()
+                        result["bio"] = clean_bio[:2000]
+                except Exception as e:
+                    logger.warning(f"Failed to scrape LinkedIn profile page: {e}")
             else:
                 logger.info("No matching LinkedIn URLs found on Google.")
 

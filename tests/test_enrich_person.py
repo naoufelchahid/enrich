@@ -12,10 +12,11 @@ def test_get_pending_people():
     
     valid_people = get_pending_people(mock_crm)
     
-    # It should filter out those without companyId
-    assert len(valid_people) == 2
+    # It just returns all pending people
+    assert len(valid_people) == 3
     assert valid_people[0]["id"] == "p1"
-    assert valid_people[1]["id"] == "p3"
+    assert valid_people[1]["id"] == "p2"
+    assert valid_people[2]["id"] == "p3"
 
 def test_process_person_no_company():
     mock_crm = MagicMock()
