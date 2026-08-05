@@ -134,3 +134,52 @@ def test_upsert_company_missing_name():
     client = TwentyCRMClient("http://fake", "fake-key")
     assert client.upsert_company({}) is None
 
+@patch('enricher.setup_twenty_fields.requests.post')
+@patch('enricher.setup_twenty_fields.requests.get')
+def test_ensure_status_fields(mock_get, mock_post):
+    from enricher.setup_twenty_fields import ensure_twenty_company_fields
+    
+    # Setup mock get response
+    mock_meta_resp = MagicMock()
+    mock_meta_resp.status_code = 200
+    mock_meta_resp.json.return_value = {
+        "data": [
+            {
+                "nameSingular": "company",
+                "id": "obj_comp_1",
+                "fields": []
+            },
+            {
+                "nameSingular": "person",
+                "id": "obj_person_1",
+                "fields": []
+            }
+        ]
+    }
+    mock_get.return_value = mock_meta_resp
+    
+    # Setup mock post response
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 200
+    mock_post.return_value = mock_post_resp
+    
+    ensure_twenty_company_fields("http://fake", "fake-key")
+    
+    # Verify post was called for enrichmentStatus and contactStatus on both objects
+    post_calls = mock_post.call_args_list
+    posted_payloads = [call[1]['json'] for call in post_calls]
+    
+    # Check company fields
+    company_enrichment = next((p for p in posted_payloads if p["objectMetadataId"] == "obj_comp_1" and p["name"] == "enrichmentStatus"), None)
+    assert company_enrichment is not None
+    
+    company_contact = next((p for p in posted_payloads if p["objectMetadataId"] == "obj_comp_1" and p["name"] == "contactStatus"), None)
+    assert company_contact is not None
+    
+    # Check person fields
+    person_enrichment = next((p for p in posted_payloads if p["objectMetadataId"] == "obj_person_1" and p["name"] == "enrichmentStatus"), None)
+    assert person_enrichment is not None
+    
+    person_contact = next((p for p in posted_payloads if p["objectMetadataId"] == "obj_person_1" and p["name"] == "contactStatus"), None)
+    assert person_contact is not None
+
