@@ -1,10 +1,11 @@
 import pytest
 import requests
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 from enricher.crm_client import TwentyCRMClient
+from enricher.ensure_twenty_fields import ensure_twenty_fields
 
-@patch('enricher.crm_client.requests.get')
-def test_list_companies(mock_get):
+def test_list_companies(mocker):
+    mock_get = mocker.patch('enricher.crm_client.requests.get')
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"data": {"companies": [{"id": "1", "name": "Test"}]}}
@@ -17,8 +18,8 @@ def test_list_companies(mock_get):
     assert companies[0]["name"] == "Test"
     mock_get.assert_called_once_with("http://fake/companies", headers=client.headers, params={"limit": 1})
 
-@patch('enricher.crm_client.requests.get')
-def test_list_companies_http_error(mock_get):
+def test_list_companies_http_error(mocker):
+    mock_get = mocker.patch('enricher.crm_client.requests.get')
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.text = "Internal Server Error"
@@ -28,16 +29,16 @@ def test_list_companies_http_error(mock_get):
     companies = client.list_companies()
     assert companies == []
 
-@patch('enricher.crm_client.requests.get')
-def test_list_companies_timeout(mock_get):
+def test_list_companies_timeout(mocker):
+    mock_get = mocker.patch('enricher.crm_client.requests.get')
     mock_get.side_effect = requests.RequestException("Connection timeout")
 
     client = TwentyCRMClient("http://fake", "fake-key")
     companies = client.list_companies()
     assert companies == []
 
-@patch('enricher.crm_client.requests.get')
-def test_search_company_http_error(mock_get):
+def test_search_company_http_error(mocker):
+    mock_get = mocker.patch('enricher.crm_client.requests.get')
     mock_resp = MagicMock()
     mock_resp.status_code = 404
     mock_resp.text = "Not Found"
@@ -47,16 +48,16 @@ def test_search_company_http_error(mock_get):
     result = client.search_company("Nonexistent")
     assert result is None
 
-@patch('enricher.crm_client.requests.get')
-def test_search_company_timeout(mock_get):
+def test_search_company_timeout(mocker):
+    mock_get = mocker.patch('enricher.crm_client.requests.get')
     mock_get.side_effect = requests.RequestException("Connection error")
 
     client = TwentyCRMClient("http://fake", "fake-key")
     result = client.search_company("Acme")
     assert result is None
 
-@patch('enricher.crm_client.requests.post')
-def test_create_company_http_error(mock_post):
+def test_create_company_http_error(mocker):
+    mock_post = mocker.patch('enricher.crm_client.requests.post')
     mock_resp = MagicMock()
     mock_resp.status_code = 400
     mock_resp.text = "Bad Request"
@@ -66,8 +67,8 @@ def test_create_company_http_error(mock_post):
     result = client.create_company({"name": "Bad Co"})
     assert result is None
 
-@patch('enricher.crm_client.requests.post')
-def test_create_company_timeout(mock_post):
+def test_create_company_timeout(mocker):
+    mock_post = mocker.patch('enricher.crm_client.requests.post')
     mock_post.side_effect = requests.RequestException("Timeout")
 
     client = TwentyCRMClient("http://fake", "fake-key")
@@ -78,8 +79,8 @@ def test_create_company_missing_name():
     client = TwentyCRMClient("http://fake", "fake-key")
     assert client.create_company({}) is None
 
-@patch('enricher.crm_client.requests.post')
-def test_create_person_http_error(mock_post):
+def test_create_person_http_error(mocker):
+    mock_post = mocker.patch('enricher.crm_client.requests.post')
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.text = "Server Error"
@@ -89,16 +90,16 @@ def test_create_person_http_error(mock_post):
     result = client.create_person({"name": {"firstName": "John"}})
     assert result is None
 
-@patch('enricher.crm_client.requests.post')
-def test_create_person_timeout(mock_post):
+def test_create_person_timeout(mocker):
+    mock_post = mocker.patch('enricher.crm_client.requests.post')
     mock_post.side_effect = requests.RequestException("Connection reset")
 
     client = TwentyCRMClient("http://fake", "fake-key")
     result = client.create_person({"name": {"firstName": "John"}})
     assert result is None
 
-@patch('enricher.crm_client.requests.post')
-def test_add_note_http_error(mock_post):
+def test_add_note_http_error(mocker):
+    mock_post = mocker.patch('enricher.crm_client.requests.post')
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.text = "Note creation failed"
@@ -108,17 +109,18 @@ def test_add_note_http_error(mock_post):
     res = client.add_note("comp_1", "Title", "Body")
     assert res is False
 
-@patch('enricher.crm_client.requests.post')
-def test_add_note_timeout(mock_post):
+def test_add_note_timeout(mocker):
+    mock_post = mocker.patch('enricher.crm_client.requests.post')
     mock_post.side_effect = requests.RequestException("Timeout")
 
     client = TwentyCRMClient("http://fake", "fake-key")
     res = client.add_note("comp_1", "Title", "Body")
     assert res is False
 
-@patch.object(TwentyCRMClient, 'search_company')
-@patch('enricher.crm_client.requests.patch')
-def test_upsert_company_patch_error(mock_patch, mock_search):
+def test_upsert_company_patch_error(mocker):
+    mock_search = mocker.patch.object(TwentyCRMClient, 'search_company')
+    mock_patch = mocker.patch('enricher.crm_client.requests.patch')
+    
     mock_search.return_value = {"id": "comp_123", "name": "Existing Co"}
     mock_resp = MagicMock()
     mock_resp.status_code = 500
@@ -134,10 +136,9 @@ def test_upsert_company_missing_name():
     client = TwentyCRMClient("http://fake", "fake-key")
     assert client.upsert_company({}) is None
 
-@patch('enricher.setup_twenty_fields.requests.post')
-@patch('enricher.setup_twenty_fields.requests.get')
-def test_ensure_status_fields(mock_get, mock_post):
-    from enricher.setup_twenty_fields import ensure_twenty_company_fields
+def test_ensure_status_fields(mocker):
+    mock_get = mocker.patch('enricher.ensure_twenty_fields.requests.get')
+    mock_post = mocker.patch('enricher.ensure_twenty_fields.requests.post')
     
     # Setup mock get response
     mock_meta_resp = MagicMock()
@@ -163,7 +164,7 @@ def test_ensure_status_fields(mock_get, mock_post):
     mock_post_resp.status_code = 200
     mock_post.return_value = mock_post_resp
     
-    ensure_twenty_company_fields("http://fake", "fake-key")
+    ensure_twenty_fields("http://fake", "fake-key")
     
     # Verify post was called for enrichmentStatus and contactStatus on both objects
     post_calls = mock_post.call_args_list
@@ -184,8 +185,8 @@ def test_ensure_status_fields(mock_get, mock_post):
     assert person_contact is not None
 
 
-@patch('enricher.crm_client.requests.patch')
-def test_update_company_success(mock_patch):
+def test_update_company_success(mocker):
+    mock_patch = mocker.patch('enricher.crm_client.requests.patch')
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"data": {"updateCompany": {"id": "comp_1", "name": "Updated"}}}
@@ -197,8 +198,8 @@ def test_update_company_success(mock_patch):
     assert res["name"] == "Updated"
     mock_patch.assert_called_once_with("http://fake/companies/comp_1", headers=client.headers, json={"name": "Updated"})
 
-@patch('enricher.crm_client.requests.get')
-def test_list_companies_with_filters(mock_get):
+def test_list_companies_with_filters(mocker):
+    mock_get = mocker.patch('enricher.crm_client.requests.get')
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"data": {"companies": [{"id": "1", "name": "Test", "enrichmentStatus": "pending"}]}}

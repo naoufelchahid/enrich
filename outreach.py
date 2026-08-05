@@ -77,10 +77,10 @@ def process_outreach(crm: TwentyCRMClient, person: Dict[str, Any], config: Dict[
     first_name = person.get("name", {}).get("firstName", "")
     full_name = f"{first_name} {person.get('name', {}).get('lastName', '')}".strip()
     
-    emails = person.get("emails", {})
+    emails = person.get("emails") or {}
     primary_email = emails.get("primaryEmail")
     
-    phones = person.get("phones", {})
+    phones = person.get("phones") or {}
     primary_phone = phones.get("primaryPhoneNumber")
     
     if not primary_email and not primary_phone:

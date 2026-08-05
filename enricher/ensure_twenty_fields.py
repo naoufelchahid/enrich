@@ -20,7 +20,7 @@ STATUS_FIELDS = [
     {"name": "contactStatus", "label": "Contact Status", "type": "TEXT"}
 ]
 
-def ensure_twenty_company_fields(api_base_url: str, api_key: str):
+def ensure_twenty_fields(api_base_url: str, api_key: str):
     """Ensures all extracted fields exist as custom columns on the company and person objects in Twenty CRM."""
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -97,4 +97,4 @@ if __name__ == "__main__":
     api_url = os.environ.get("TWENTY_API_BASE_URL", "http://localhost:3005/rest")
     api_key = os.environ.get("TWENTY_API_KEY")
     if api_key:
-        ensure_twenty_company_fields(api_url, api_key)
+        ensure_twenty_fields(api_url, api_key)

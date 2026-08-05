@@ -1,7 +1,7 @@
 import logging
 import json
 import re
-import subprocess
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,11 @@ def extract_company_data(text: str, api_key: str = None) -> dict:
     Text: {text}
     """
     try:
-        # Call agy CLI
-        result = subprocess.run(["agy", prompt], capture_output=True, text=True, check=True)
-        json_str = result.stdout
+        if api_key:
+            genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        json_str = response.text
         # Strip markdown formatting if present
         match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', json_str, re.DOTALL)
         if match:
