@@ -1,6 +1,7 @@
 import requests
 import json
 import logging
+import time
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,18 @@ class TwentyCRMClient:
             "Content-Type": "application/json"
         }
 
+    def _request_with_retry(self, method: str, url: str, **kwargs):
+        req_func = getattr(requests, method.lower())
+        for attempt in range(5):
+            resp = req_func(url, **kwargs)
+            if resp.status_code == 429:
+                sleep_time = (attempt + 1) * 20
+                logger.warning(f"Rate limited (429) on {method} {url}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+            return resp
+        return req_func(url, **kwargs)
+
     def search_company(self, name: str) -> Optional[Dict[str, Any]]:
         """Search company by exact or partial name in Twenty CRM."""
         url = f"{self.api_base_url}/companies"
@@ -21,7 +34,7 @@ class TwentyCRMClient:
             "limit": 1
         }
         try:
-            resp = requests.get(url, headers=self.headers, params=params)
+            resp = self._request_with_retry("get", url, headers=self.headers, params=params)
             if resp.status_code == 200:
                 data = resp.json().get("data", {}).get("companies", [])
                 if data:
@@ -43,7 +56,7 @@ class TwentyCRMClient:
             company_id = existing["id"]
             url = f"{self.api_base_url}/companies/{company_id}"
             try:
-                resp = requests.patch(url, headers=self.headers, json=company_data)
+                resp = self._request_with_retry("patch", url, headers=self.headers, json=company_data)
                 if resp.status_code in (200, 201):
                     logger.info(f"Updated company {name} ({company_id}) in Twenty CRM")
                     return resp.json().get("data", {}).get("updateCompany", existing)
@@ -62,7 +75,7 @@ class TwentyCRMClient:
             return None
         url = f"{self.api_base_url}/companies"
         try:
-            resp = requests.post(url, headers=self.headers, json=company_data)
+            resp = self._request_with_retry("post", url, headers=self.headers, json=company_data)
             if resp.status_code in (200, 201):
                 created = resp.json().get("data", {}).get("createCompany", {})
                 logger.info(f"Created company {name} in Twenty CRM")
@@ -78,7 +91,7 @@ class TwentyCRMClient:
         """Creates a person record in Twenty CRM."""
         url = f"{self.api_base_url}/people"
         try:
-            resp = requests.post(url, headers=self.headers, json=person_data)
+            resp = self._request_with_retry("post", url, headers=self.headers, json=person_data)
             if resp.status_code in (200, 201):
                 created = resp.json().get("data", {}).get("createPerson", {})
                 first_name = person_data.get('name', {}).get('firstName', '')
@@ -111,7 +124,7 @@ class TwentyCRMClient:
             }
         }
         try:
-            resp = requests.post(note_url, headers=self.headers, json=payload)
+            resp = self._request_with_retry("post", note_url, headers=self.headers, json=payload)
             if resp.status_code in (200, 201):
                 note_data = resp.json().get("data", {}).get("createNote", {})
                 note_id = note_data.get("id")
@@ -122,7 +135,7 @@ class TwentyCRMClient:
                         "noteId": note_id,
                         "targetCompanyId": company_id
                     }
-                    requests.post(target_url, headers=self.headers, json=target_payload)
+                    self._request_with_retry("post", target_url, headers=self.headers, json=target_payload)
                     logger.info(f"Attached note '{title}' to company ID {company_id}")
                     return True
             else:
@@ -131,12 +144,15 @@ class TwentyCRMClient:
             logger.error(f"Error adding note to company {company_id}: {e}")
         return False
 
-    def list_companies(self, limit: int = 50) -> list:
+    def list_companies(self, limit: int = 50, filters: Dict[str, str] = None) -> list:
         """Fetch a list of companies from Twenty CRM."""
         url = f"{self.api_base_url}/companies"
         params = {"limit": limit}
+        if filters:
+            for k, v in filters.items():
+                params[f"filter[{k}][eq]"] = v
         try:
-            resp = requests.get(url, headers=self.headers, params=params)
+            resp = self._request_with_retry("get", url, headers=self.headers, params=params)
             if resp.status_code == 200:
                 return resp.json().get("data", {}).get("companies", [])
             else:
@@ -144,4 +160,18 @@ class TwentyCRMClient:
         except Exception as e:
             logger.error(f"Error listing companies: {e}")
         return []
+
+    def update_company(self, company_id: str, company_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Updates an existing company record in Twenty CRM by ID."""
+        url = f"{self.api_base_url}/companies/{company_id}"
+        try:
+            resp = self._request_with_retry("patch", url, headers=self.headers, json=company_data)
+            if resp.status_code in (200, 201):
+                logger.info(f"Updated company ID {company_id} in Twenty CRM")
+                return resp.json().get("data", {}).get("updateCompany", {})
+            else:
+                logger.error(f"Failed to update company ID {company_id}: {resp.text}")
+        except Exception as e:
+            logger.error(f"Exception updating company ID {company_id}: {e}")
+        return None
 

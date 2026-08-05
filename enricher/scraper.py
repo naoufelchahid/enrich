@@ -1,10 +1,8 @@
-import os
-import time
 import urllib.parse
 import logging
 import json
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import requests
 from bs4 import BeautifulSoup
 from cloakbrowser import launch
@@ -70,94 +68,66 @@ class KerixScraper:
 
         page = self.browser.new_page()
         try:
-            # Step 1: Open kerix.net
-            logger.info("Step 1: Navigating to https://www.kerix.net/fr/")
-            page.goto("https://www.kerix.net/fr/", wait_until="networkidle", timeout=30000)
+            logger.info("Step 1: Searching Google for company domains...")
+            query = f'site:telecontact.ma OR site:kerix.net OR site:charika.ma intitle:"{clean_name}"'
+            q_enc = urllib.parse.quote(query)
+            
+            page.goto(f"https://www.google.com/search?q={q_enc}&hl=en", wait_until="networkidle", timeout=30000)
 
-            # Step 2: Dismiss cookie banner overlay to allow UI interactions
-            logger.info("Step 2: Dismissing cookie banner overlay...")
-            page.evaluate("""() => {
-                const wrapper = document.getElementById("cookiescript_injected_wrapper");
-                if (wrapper) wrapper.remove();
-                const injected = document.getElementById("cookiescript_injected");
-                if (injected) injected.remove();
-            }""")
-            page.wait_for_timeout(300)
-
-            # Step 3: Select 'Entreprises' button
-            logger.info("Step 3: Selecting 'Entreprises' search mode button...")
             try:
-                btn = page.wait_for_selector('button.search-mode-badge[data-mode="companies"]', timeout=5000)
-                if btn:
-                    btn.click()
-                    page.wait_for_timeout(300)
-            except Exception as e:
-                logger.warning(f"Could not click 'Entreprises' button: {e}")
+                page.evaluate("""() => {
+                    const btns = document.querySelectorAll('button');
+                    for (let b of btns) {
+                        if (b.innerText.includes('Accept all') || b.innerText.includes('Tout accepter') || b.innerText.includes('I agree')) {
+                            b.click();
+                            break;
+                        }
+                    }
+                }""")
+                page.wait_for_timeout(1000)
+            except:
+                pass
 
-            # Step 4: Type clean proper company name in search bar #search
-            logger.info(f"Step 4: Typing proper company name '{clean_name}' (original: '{company_name}') in search bar...")
-            search_input = page.wait_for_selector("#search", timeout=5000)
-            search_input.fill("")
-            search_input.type(clean_name, delay=50)
-
-            # Step 5: Wait for #entitiesNav JS dropdown elements to appear
-            logger.info("Step 5: Waiting for #entitiesNav result dropdown...")
-            company_link = None
+            target_url = None
             try:
-                page.wait_for_selector("#entitiesNav a.company-result-link", timeout=6000)
-                links = page.query_selector_all("#entitiesNav a.company-result-link")
-                logger.info(f"Found {len(links)} company links in #entitiesNav")
-
-                target_clean = re.sub(r"[^\w\s]", "", clean_name.lower())
-                target_words = set(target_clean.split())
-                matching_element = None
-
-                for l in links:
-                    href = l.get_attribute("href")
-                    raw_text = l.inner_text().strip().replace("\n", " ")
-                    link_words = set(re.sub(r"[^\w\s]", "", raw_text.lower()).split())
-
-                    # Match proper name against result link
-                    if (target_words and target_words.issubset(link_words)) or (target_clean and target_clean in re.sub(r"[^\w\s]", "", raw_text.lower())):
-                        matching_element = l
-                        logger.info(f"Matched company link: [{raw_text}] -> {href}")
-                        break
-
-                if not matching_element and links:
-                    matching_element = links[0]
-                    logger.info(f"Fallback to first dropdown result link: {links[0].get_attribute('href')}")
-
-                if matching_element:
-                    logger.info("Step 6: Clicking matching div link in #entitiesNav...")
-                    matching_element.click()
-                    page.wait_for_timeout(3000)
-                    company_link = page.url
+                page.wait_for_selector("a", timeout=5000)
+                links = page.query_selector_all("a")
+                for link in links:
+                    href = link.get_attribute("href")
+                    if href and any(d in href for d in ["kerix.net", "telecontact.ma", "charika.ma"]):
+                        if "google.com" not in href and "webcache" not in href and "translate.goog" not in href:
+                            target_url = href
+                            break
             except Exception as e:
-                logger.warning(f"Dropdown #entitiesNav did not appear or error occurred: {e}")
+                logger.warning(f"Could not find search results on Google: {e}")
 
-            # Fallback if no dropdown link found: query API /fr/search?q=
-            if not company_link:
-                logger.info(f"Attempting fallback search via API for '{clean_name}'...")
-                q_enc = urllib.parse.quote(clean_name)
-                api_url = f"https://www.kerix.net/fr/search?q={q_enc}"
-                resp = page.goto(api_url, wait_until="networkidle", timeout=15000)
-                if resp and resp.status == 200:
-                    try:
-                        data = json.loads(page.inner_text("body"))
-                        companies = data.get("companies", [])
-                        if companies:
-                            slug = companies[0].get("slug")
-                            if slug:
-                                company_link = f"https://www.kerix.net/fr/annuaire-entreprise/{slug}"
-                    except Exception as e:
-                        logger.error(f"Fallback API parse error: {e}")
+            if not target_url:
+                logger.info("No matching URLs found on Google.")
+                return result
 
-            # Step 6: Extract details from company detail page
-            if company_link:
-                result["kerix_url"] = company_link
-                if page.url != company_link:
-                    logger.info(f"Navigating to company detail page: {company_link}")
-                    page.goto(company_link, wait_until="networkidle", timeout=30000)
+            logger.info(f"Matched URL from Google: {target_url}")
+
+            if "telecontact.ma" in target_url:
+                result["telecontact_url"] = target_url
+                page.goto(target_url, wait_until="networkidle", timeout=30000)
+                html = page.content()
+                phone_match = re.search(r"(?:Tél|Tel|Téléphone)\s*[:\.-]?\s*([\+0]\d[\d\s\.\-/]{8,15})", html, re.IGNORECASE)
+                if phone_match:
+                    result["phone"] = phone_match.group(1).strip()
+                return result
+
+            elif "charika.ma" in target_url:
+                result["charika_url"] = target_url
+                page.goto(target_url, wait_until="networkidle", timeout=30000)
+                html = page.content()
+                ice_match = re.search(r"ICE\s*[:\.-]?\s*(\d{15})", html, re.IGNORECASE)
+                if ice_match:
+                    result["ice"] = ice_match.group(1)
+                return result
+
+            elif "kerix.net" in target_url:
+                result["kerix_url"] = target_url
+                page.goto(target_url, wait_until="networkidle", timeout=30000)
 
                 # Re-dismiss cookie banner if present
                 page.evaluate("""() => {

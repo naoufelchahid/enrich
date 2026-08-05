@@ -183,3 +183,30 @@ def test_ensure_status_fields(mock_get, mock_post):
     person_contact = next((p for p in posted_payloads if p["objectMetadataId"] == "obj_person_1" and p["name"] == "contactStatus"), None)
     assert person_contact is not None
 
+
+@patch('enricher.crm_client.requests.patch')
+def test_update_company_success(mock_patch):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"data": {"updateCompany": {"id": "comp_1", "name": "Updated"}}}
+    mock_patch.return_value = mock_resp
+
+    client = TwentyCRMClient("http://fake", "fake-key")
+    res = client.update_company("comp_1", {"name": "Updated"})
+    
+    assert res["name"] == "Updated"
+    mock_patch.assert_called_once_with("http://fake/companies/comp_1", headers=client.headers, json={"name": "Updated"})
+
+@patch('enricher.crm_client.requests.get')
+def test_list_companies_with_filters(mock_get):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"data": {"companies": [{"id": "1", "name": "Test", "enrichmentStatus": "pending"}]}}
+    mock_get.return_value = mock_resp
+
+    client = TwentyCRMClient("http://fake", "fake-key")
+    companies = client.list_companies(limit=5, filters={"enrichmentStatus": "pending"})
+    
+    assert len(companies) == 1
+    mock_get.assert_called_once_with("http://fake/companies", headers=client.headers, params={"limit": 5, "filter[enrichmentStatus][eq]": "pending"})
+

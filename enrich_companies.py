@@ -1,7 +1,6 @@
 import os
 import argparse
 import json
-import pandas as pd
 import logging
 from enricher.crm_client import TwentyCRMClient
 from enricher.scraper import KerixScraper
@@ -9,6 +8,8 @@ from enricher.setup_twenty_fields import ensure_twenty_company_fields
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+MAX_ENRICH_LIMIT = 10
 
 def load_env():
     env_file = ".env"
@@ -20,9 +21,8 @@ def load_env():
                     os.environ[k] = v
 
 def main():
-    parser = argparse.ArgumentParser(description="Enrich Twenty CRM with company data via CloakBrowser and Kerix.net")
-    parser.add_argument("--csv", default="by_direction/ANFA.csv", help="Path to input CSV file")
-    parser.add_argument("--limit", type=int, default=5, help="Number of records to process")
+    parser = argparse.ArgumentParser(description="Enrich Twenty CRM with company data via CloakBrowser and Google search")
+    parser.add_argument("--limit", type=int, default=MAX_ENRICH_LIMIT, help="Number of records to process")
     parser.add_argument("--headless", action="store_true", default=False, help="Run browser in headless mode (default: False)")
     args = parser.parse_args()
 
@@ -42,39 +42,58 @@ def main():
     # Ensure custom company columns exist in Twenty CRM
     ensure_twenty_company_fields(api_url, api_key)
 
+    limit = min(args.limit, MAX_ENRICH_LIMIT)
     crm = TwentyCRMClient(api_url, api_key)
     scraper = KerixScraper(license_key, headless=args.headless)
 
-    df = pd.read_csv(args.csv)
-    logger.info(f"Loaded {len(df)} companies from {args.csv}")
+    companies = crm.list_companies(limit=limit, filters={"enrichmentStatus": "pending"})
+    logger.info(f"Found {len(companies)} pending companies in CRM to enrich (limit {limit})")
 
     try:
-        for idx, row in df.head(args.limit).iterrows():
-            company_name = str(row.get("companyName", "")).strip('"\t ').replace('"', '').strip()
+        for idx, company in enumerate(companies):
+            company_id = company["id"]
+            company_name = company.get("name", "").strip()
             if not company_name:
                 continue
 
-            logger.info(f"[{idx+1}/{args.limit}] Processing company: {company_name}")
+            logger.info(f"[{idx+1}/{len(companies)}] Processing company: {company_name}")
 
-            # Scrape Kerix
+            # Scrape company
             scraped = scraper.scrape_company(company_name)
             print(f"\n================ SCRAPED JSON FOR '{company_name}' ================")
             print(json.dumps(scraped, indent=2, ensure_ascii=False))
             print("================================================================")
 
-            if not scraped.get("kerix_url"):
-                logger.info(f"Skipping {company_name} - no results found on Kerix.")
+            has_data = any([
+                scraped.get("kerix_url"),
+                scraped.get("telecontact_url"),
+                scraped.get("charika_url")
+            ])
+
+            if not has_data:
+                logger.info(f"Skipping {company_name} - no results found.")
                 continue
 
             # Build CRM payload with custom company columns
             payload = {
-                "name": company_name,
+                "enrichmentStatus": "company_enriched"
             }
             if scraped.get("kerix_url"):
                 payload["domainName"] = {
                     "primaryLinkLabel": "Kerix Profile",
                     "primaryLinkUrl": scraped["kerix_url"]
                 }
+            elif scraped.get("telecontact_url"):
+                payload["domainName"] = {
+                    "primaryLinkLabel": "Telecontact Profile",
+                    "primaryLinkUrl": scraped["telecontact_url"]
+                }
+            elif scraped.get("charika_url"):
+                payload["domainName"] = {
+                    "primaryLinkLabel": "Charika Profile",
+                    "primaryLinkUrl": scraped["charika_url"]
+                }
+
             if scraped.get("address"):
                 payload["address"] = {
                     "addressStreet1": scraped["address"],
@@ -99,24 +118,9 @@ def main():
             if scraped.get("phone"):
                 payload["phone"] = scraped["phone"]
 
-            res = crm.create_company(payload)
-            if res and res.get("id"):
-                company_id = res["id"]
-                
+            res = crm.update_company(company_id, payload)
+            if res:
                 import re
-
-                # Get admin info from CSV
-                admin_first = str(row.get("admin_firstName", "")).strip()
-                if admin_first.lower() == "nan": admin_first = ""
-                admin_last = str(row.get("admin_lastName", "")).strip()
-                if admin_last.lower() == "nan": admin_last = ""
-                admin_email = str(row.get("admin_email", "")).strip()
-                if admin_email.lower() == "nan": admin_email = ""
-                admin_phone = str(row.get("admin_phoneNumber", "")).strip()
-                if admin_phone.lower() == "nan": admin_phone = ""
-                
-                admin_full_name = f"{admin_first} {admin_last}".strip()
-
                 people_payloads = {}
                 
                 # Parse Kerix dirigeants
@@ -139,41 +143,6 @@ def main():
                             "companyId": company_id
                         }
                 
-                # Check admin and merge or add
-                if admin_full_name:
-                    matched_key = None
-                    admin_lower = admin_full_name.lower()
-                    
-                    # Try to match names
-                    for k in people_payloads.keys():
-                        if admin_lower in k or k in admin_lower:
-                            matched_key = k
-                            break
-                    
-                    if matched_key:
-                        # Merge email and phone into the matched person
-                        if admin_email:
-                            people_payloads[matched_key]["emails"] = {"primaryEmail": admin_email}
-                        if admin_phone:
-                            # Prepend + if not present to ensure valid format, but TwentyCRM accepts any valid intl format. We'll pass as is.
-                            # Just to be safe with Moroccan numbers, pass as string.
-                            people_payloads[matched_key]["phones"] = {"primaryPhoneNumber": f"+212{admin_phone}" if admin_phone.startswith("6") or admin_phone.startswith("7") or admin_phone.startswith("5") else admin_phone}
-                    else:
-                        # Create new person for admin
-                        admin_payload = {
-                            "name": {
-                                "firstName": admin_first,
-                                "lastName": admin_last
-                            },
-                            "jobTitle": "Admin",
-                            "companyId": company_id
-                        }
-                        if admin_email:
-                            admin_payload["emails"] = {"primaryEmail": admin_email}
-                        if admin_phone:
-                            admin_payload["phones"] = {"primaryPhoneNumber": f"+212{admin_phone}" if admin_phone.startswith("6") or admin_phone.startswith("7") or admin_phone.startswith("5") else admin_phone}
-                        people_payloads[admin_lower] = admin_payload
-
                 for p_payload in people_payloads.values():
                     crm.create_person(p_payload)
 
@@ -197,8 +166,6 @@ def main():
                     note_lines.append(f"**Activités**: {scraped['activity']}")
                 if scraped.get("phone"):
                     note_lines.append(f"**Téléphone**: {scraped['phone']}")
-                if admin_email:
-                    note_lines.append(f"**Admin Email**: {admin_email}")
 
                 if note_lines:
                     crm.add_note(company_id, "Enriched Metadata", "\n".join(note_lines))
