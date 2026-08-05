@@ -66,7 +66,7 @@ def test_main_import_flow(mock_crm_cls, tmp_path, monkeypatch):
     df.to_excel(test_file, index=False)
     
     with patch.object(pd, "read_excel", return_value=df):
-        main()
+        main([])
             
     mock_crm_instance.create_company.assert_called_once_with({"name": "ACME Corp"})
     mock_crm_instance.create_person.assert_called_once_with({
@@ -97,7 +97,7 @@ def test_main_import_flow_missing_comp_id(mock_crm_cls, tmp_path, monkeypatch):
     })
     
     with patch.object(pd, "read_excel", return_value=df):
-        main()
+        main([])
             
     mock_crm_instance.create_company.assert_called_once_with({"name": "NoID Corp"})
     mock_crm_instance.create_person.assert_not_called()
