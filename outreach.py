@@ -14,6 +14,8 @@ try:
 except ImportError:
     pywhatkit = None
 
+OUTREACH_LIMIT = 10
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -75,11 +77,11 @@ def process_outreach(crm: TwentyCRMClient, person: Dict[str, Any], config: Dict[
     first_name = person.get("name", {}).get("firstName", "")
     full_name = f"{first_name} {person.get('name', {}).get('lastName', '')}".strip()
     
-    emails = person.get("emails", [])
-    primary_email = emails[0].get("primaryEmail") if emails else None
+    emails = person.get("emails", {})
+    primary_email = emails.get("primaryEmail")
     
-    phones = person.get("phones", [])
-    primary_phone = phones[0].get("primaryPhone") if phones else None
+    phones = person.get("phones", {})
+    primary_phone = phones.get("primaryPhoneNumber")
     
     if not primary_email and not primary_phone:
         logger.warning(f"No email or phone for {full_name}. Failing outreach.")
@@ -138,8 +140,9 @@ def main():
 
     crm = TwentyCRMClient(api_url, api_key)
     
-    people_to_process = get_pending_outreach(crm, limit=args.limit)
-    logger.info(f"Found {len(people_to_process)} people for outreach.")
+    limit = min(args.limit, OUTREACH_LIMIT)
+    people_to_process = get_pending_outreach(crm, limit=limit)
+    logger.info(f"Found {len(people_to_process)} people for outreach (capped at {limit}).")
 
     for person in people_to_process:
         process_outreach(crm, person, smtp_config)

@@ -63,8 +63,8 @@ def test_process_outreach_success(mock_send_whatsapp, mock_send_email):
     person = {
         "id": "p1",
         "name": {"firstName": "John", "lastName": "Doe"},
-        "emails": [{"primaryEmail": "john@example.com"}],
-        "phones": [{"primaryPhone": "+1234567890"}]
+        "emails": {"primaryEmail": "john@example.com"},
+        "phones": {"primaryPhoneNumber": "+1234567890"}
     }
     
     result = process_outreach(mock_crm, person, config)
@@ -84,8 +84,8 @@ def test_process_outreach_missing_contact_info(mock_send_whatsapp, mock_send_ema
     person = {
         "id": "p1",
         "name": {"firstName": "John", "lastName": "Doe"},
-        "emails": [],
-        "phones": []
+        "emails": {},
+        "phones": {}
     }
     
     result = process_outreach(mock_crm, person, config)
@@ -113,8 +113,8 @@ def test_process_outreach_email_fails(mock_send_whatsapp, mock_send_email):
     person = {
         "id": "p1",
         "name": {"firstName": "John", "lastName": "Doe"},
-        "emails": [{"primaryEmail": "john@example.com"}],
-        "phones": [{"primaryPhone": "+1234567890"}]
+        "emails": {"primaryEmail": "john@example.com"},
+        "phones": {"primaryPhoneNumber": "+1234567890"}
     }
     
     result = process_outreach(mock_crm, person, config)
@@ -146,8 +146,8 @@ def test_process_outreach_all_fail(mock_send_whatsapp, mock_send_email):
     person = {
         "id": "p1",
         "name": {"firstName": "John", "lastName": "Doe"},
-        "emails": [{"primaryEmail": "john@example.com"}],
-        "phones": [{"primaryPhone": "+1234567890"}]
+        "emails": {"primaryEmail": "john@example.com"},
+        "phones": {"primaryPhoneNumber": "+1234567890"}
     }
     
     result = process_outreach(mock_crm, person, config)
