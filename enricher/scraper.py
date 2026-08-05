@@ -264,5 +264,98 @@ class CharikaScraper:
             logger.error(f"Charika scrape failed: {e}")
         return data
 
+class LinkedInScraper:
+    def __init__(self, license_key: str, headless: bool = False):
+        self.license_key = license_key
+        self.headless = headless
+        self.browser = None
 
+    def start(self):
+        if not self.browser:
+            self.browser = launch(
+                license_key=self.license_key,
+                headless=self.headless,
+                humanize=True,
+                human_preset="careful"
+            )
+
+    def close(self):
+        if self.browser:
+            try:
+                self.browser.close()
+            except Exception as e:
+                logger.error(f"Error closing CloakBrowser: {e}")
+            self.browser = None
+
+    def scrape_person(self, person_name: str, company_name: str) -> Dict[str, Any]:
+        """Search Google for person's LinkedIn profile and extract basic info."""
+        self.start()
+        
+        result = {
+            "name": person_name,
+            "company": company_name,
+            "linkedin_url": None,
+            "headline": None
+        }
+
+        page = self.browser.new_page()
+        try:
+            logger.info(f"Searching Google for LinkedIn profile of {person_name} at {company_name}...")
+            # Query format: site:linkedin.com/in intitle:"person name" "company name"
+            query = f'site:linkedin.com/in intitle:"{person_name}" "{company_name}"'
+            q_enc = urllib.parse.quote(query)
+            
+            page.goto(f"https://www.google.com/search?q={q_enc}&hl=en", wait_until="networkidle", timeout=30000)
+
+            try:
+                page.evaluate("""() => {
+                    const btns = document.querySelectorAll('button');
+                    for (let b of btns) {
+                        if (b.innerText.includes('Accept all') || b.innerText.includes('Tout accepter') || b.innerText.includes('I agree')) {
+                            b.click();
+                            break;
+                        }
+                    }
+                }""")
+                page.wait_for_timeout(1000)
+            except Exception as e:
+                logger.warning(f"Failed to dismiss Google cookie banner: {e}")
+
+            target_url = None
+            headline = None
+            try:
+                page.wait_for_selector("a", timeout=5000)
+                # Find the first valid linkedin.com/in url from Google results
+                elements = page.query_selector_all("div.g") # Google search result block
+                for el in elements:
+                    link = el.query_selector("a")
+                    if link:
+                        href = link.get_attribute("href")
+                        if href and "linkedin.com/in" in href and "google.com" not in href:
+                            target_url = href
+                            # try to extract snippet/headline if possible from the Google result
+                            h3 = el.query_selector("h3")
+                            if h3:
+                                headline = h3.inner_text()
+                            break
+            except Exception as e:
+                logger.warning(f"Could not find search results on Google: {e}")
+
+            if target_url:
+                logger.info(f"Matched LinkedIn URL from Google: {target_url}")
+                result["linkedin_url"] = target_url
+                if headline:
+                    result["headline"] = headline.replace(" - LinkedIn", "").strip()
+            else:
+                logger.info("No matching LinkedIn URLs found on Google.")
+
+        except Exception as e:
+            logger.error(f"Scraping error for {person_name} ({company_name}): {e}")
+        finally:
+            page.close()
+
+        json_output = json.dumps(result, indent=2, ensure_ascii=False)
+        logger.info(f"Scraped JSON result for '{person_name}':\n{json_output}")
+
+        return result
 

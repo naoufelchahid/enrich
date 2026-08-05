@@ -1,14 +1,11 @@
 import logging
-import google.generativeai as genai
 import json
 import re
+import subprocess
 
 logger = logging.getLogger(__name__)
 
-def extract_company_data(text: str, api_key: str) -> dict:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash") # Use standard fast model
-    
+def extract_company_data(text: str, api_key: str = None) -> dict:
     prompt = f"""
     Extract the following information from the text provided into a JSON object:
     - ice (string)
@@ -23,8 +20,9 @@ def extract_company_data(text: str, api_key: str) -> dict:
     Text: {text}
     """
     try:
-        response = model.generate_content(prompt)
-        json_str = response.text
+        # Call agy CLI
+        result = subprocess.run(["agy", prompt], capture_output=True, text=True, check=True)
+        json_str = result.stdout
         # Strip markdown formatting if present
         match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', json_str, re.DOTALL)
         if match:
