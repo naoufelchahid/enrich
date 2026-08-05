@@ -85,8 +85,8 @@ class KerixScraper:
                     }
                 }""")
                 page.wait_for_timeout(1000)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to dismiss Google cookie banner: {e}")
 
             target_url = None
             try:

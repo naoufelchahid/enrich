@@ -71,7 +71,8 @@ def main():
             ])
 
             if not has_data:
-                logger.info(f"Skipping {company_name} - no results found.")
+                logger.info(f"Skipping {company_name} - no results found. Updating status to failed.")
+                crm.update_company(company_id, {"enrichmentStatus": "failed"})
                 continue
 
             # Build CRM payload with custom company columns

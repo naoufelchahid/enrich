@@ -16,15 +16,11 @@ class TwentyCRMClient:
 
     def _request_with_retry(self, method: str, url: str, **kwargs):
         req_func = getattr(requests, method.lower())
-        for attempt in range(5):
-            resp = req_func(url, **kwargs)
-            if resp.status_code == 429:
-                sleep_time = (attempt + 1) * 20
-                logger.warning(f"Rate limited (429) on {method} {url}. Retrying in {sleep_time}s...")
-                time.sleep(sleep_time)
-                continue
-            return resp
-        return req_func(url, **kwargs)
+        resp = req_func(url, **kwargs)
+        if resp.status_code == 429:
+            logger.warning(f"Rate limited (429) on {method} {url}. Please wait for next cron run.")
+            resp.raise_for_status()
+        return resp
 
     def search_company(self, name: str) -> Optional[Dict[str, Any]]:
         """Search company by exact or partial name in Twenty CRM."""
