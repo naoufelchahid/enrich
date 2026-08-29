@@ -1,284 +1,181 @@
 import { defineFrontComponent } from 'twenty-sdk/define';
-import { useState } from 'react';
-import { Avatar } from 'twenty-ui/data-display';
-import {
-  IconBox,
-  IconHierarchy,
-  IconLayout,
-  IconSettingsAutomation,
-} from 'twenty-ui/icon';
+import { useState, useRef } from 'react';
+import * as xlsx from 'xlsx';
 
 import {
   APP_DISPLAY_NAME,
   MAIN_PAGE_FRONT_COMPONENT_UNIVERSAL_IDENTIFIER,
 } from 'src/constants/universal-identifiers';
 
-const DOCS_BASE_URL = 'https://docs.twenty.com/developers/extend/apps';
+const STANDARD_FIELDS = [
+  { key: 'firstName', label: 'First Name' },
+  { key: 'lastName', label: 'Last Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'companyName', label: 'Company Name' },
+  { key: 'companyWebsite', label: 'Company Website' },
+  { key: 'linkedInUrl', label: 'LinkedIn URL' },
+];
 
-const CATEGORIES = [
-  {
-    title: 'Data model',
-    color: '#73D08D',
-    items: [
-      { label: 'CUSTOM OBJECT', href: `${DOCS_BASE_URL}/data/objects` },
-      {
-        label: 'CUSTOM FIELDS',
-        href: `${DOCS_BASE_URL}/data/extending-objects`,
-      },
-    ],
-    rotation: '2.4deg',
-  },
-  {
-    title: 'Logic',
-    color: '#F4D345',
-    items: [
-      {
-        label: 'TOOLS',
-        href: `${DOCS_BASE_URL}/logic/logic-functions`,
-      },
-      {
-        label: 'LOGIC FUNCTION',
-        href: `${DOCS_BASE_URL}/logic/logic-functions`,
-      },
-      {
-        label: 'SKILLS',
-        href: `${DOCS_BASE_URL}/logic/skills-and-agents`,
-      },
-    ],
-    rotation: '0deg',
-  },
-  {
-    title: 'Layout',
-    color: '#C4A2E0',
-    items: [
-      { label: 'VIEWS', href: `${DOCS_BASE_URL}/layout/views` },
-      { label: 'WIDGETS', href: `${DOCS_BASE_URL}/layout/page-layouts` },
-      {
-        label: 'LAYOUT PAGES',
-        href: `${DOCS_BASE_URL}/layout/page-layouts`,
-      },
-      {
-        label: 'COMMANDS',
-        href: `${DOCS_BASE_URL}/layout/command-menu-items`,
-      },
-    ],
-    rotation: '-2.8deg',
-  },
-] as const;
+const MainPage = () => {
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [isUploading, setIsUploading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
 
-const ArrowUpRight = ({ color = '#999' }: { color?: string }) => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-    <path
-      d="M4.5 3.5H10.5V9.5M10.5 3.5L3.5 10.5"
-      stroke={color}
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-const CategoryCard = ({
-  title,
-  color,
-  items,
-  rotation,
-}: {
-  title: string;
-  color: string;
-  items: ReadonlyArray<{ label: string; href: string }>;
-  rotation: string;
-}) => {
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  const CategoryIcon = () => {
-    if (title === 'Data model') {
-      return <IconHierarchy color={color} size={'20px'} />;
-    }
-    if (title === 'Logic') {
-      return <IconSettingsAutomation color={color} size={'20px'} />;
-    }
-    if (title === 'Layout') {
-      return <IconLayout color={color} size={'20px'} />;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = evt.target?.result;
+      if (!data) return;
+
+      const workbook = xlsx.read(data, { type: 'binary' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+
+      const json: any[][] = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      if (json.length > 0) {
+        setHeaders(json[0] || []);
+        setRows(json.slice(1).filter(r => r.length > 0)); // skip header and empty rows
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleMappingChange = (standardField: string, excelHeader: string) => {
+    setMapping((prev) => ({
+      ...prev,
+      [standardField]: excelHeader,
+    }));
+  };
+
+  const handleSubmit = async () => {
+    setIsUploading(true);
+    setResult(null);
+
+    // Build the mapped JSON
+    const mappedJSON = rows.map((row) => {
+      const record: any = {};
+      Object.entries(mapping).forEach(([stdField, excelHeader]) => {
+        const colIndex = headers.indexOf(excelHeader);
+        if (colIndex !== -1) {
+          record[stdField] = row[colIndex];
+        }
+      });
+      // Always include original row for skipped lead tracking if needed
+      record._original = row;
+      return record;
+    });
+
+    try {
+      // In a real Twenty environment, we would use the internal app endpoint for the Logic Function.
+      // E.g., /rest/v1/apps/{app-universal-identifier}/functions/ingest-excel
+      const response = await fetch('/rest/v1/apps/enrich-twenty-app/functions/ingest-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}` // Mocked auth
+        },
+        body: JSON.stringify({ rows: mappedJSON }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to ingest Excel data');
+      }
+
+      setResult('Successfully ingested ' + mappedJSON.length + ' rows.');
+      setHeaders([]);
+      setRows([]);
+      setMapping({});
+    } catch (err: any) {
+      setResult('Error: ' + err.message);
+    } finally {
+      setIsUploading(false);
     }
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        border: `1px solid ${color}80`,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        width: '240px',
-        background: '#FFFFFF',
-        transform: `rotate(${rotation})`,
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
-      }}
-    >
-      <div
-        style={{
-          padding: '16px 20px',
-          background: `${color}22`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}
-      >
-        <CategoryIcon />
-        <span
-          style={{
-            fontSize: '16px',
-            fontWeight: 600,
-            color: color,
-          }}
-        >
-          {title}
-        </span>
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '8px',
-          gap: '4px',
-        }}
-      >
-        {items.map((item) => {
-          const isHovered = hoveredItem === item.label;
+    <div style={{ padding: '40px', fontFamily: 'Inter, sans-serif' }}>
+      <h1 style={{ fontSize: '24px', marginBottom: '20px' }}>Upload BDD6.xlsx</h1>
 
-          return (
-            <a
-              key={item.label}
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              onMouseEnter={() => setHoveredItem(item.label)}
-              onMouseLeave={() => setHoveredItem(null)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                textDecoration: 'none',
-                cursor: 'pointer',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                background: isHovered ? '#0000000A' : 'transparent',
-                transition: 'background 0.15s',
-              }}
-            >
-              <IconBox color={color} size={'20px'} />
-              <span
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 300,
-                  color: '#333',
-                  letterSpacing: '0.5px',
-                  flex: 1,
-                }}
-              >
-                {item.label}
-              </span>
-              {isHovered && <ArrowUpRight />}
-            </a>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const MainPage = () => {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        fontFamily:
-          'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        gap: '8px',
-        padding: '40px',
-      }}
-    >
-      <Avatar
-        placeholder={APP_DISPLAY_NAME}
-        placeholderColorSeed={APP_DISPLAY_NAME}
-        size="xl"
-      />
-      <span
-        style={{
-          fontSize: '24px',
-          fontWeight: 600,
-          color: '#333',
-          marginTop: '8px',
-        }}
-      >
-        {APP_DISPLAY_NAME}
-      </span>
-      <span
-        style={{
-          fontSize: '13px',
-          color: '#888',
-          textAlign: 'center',
-          lineHeight: '1.5',
-        }}
-      >
-        Was installed successfully.
-        <br />
-        You can now add content to your app.
-      </span>
-      <a
-        href="/settings/applications#installed"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          marginTop: '16px',
-          fontSize: '13px',
-          color: '#333',
-          textDecoration: 'none',
-          padding: '8px 16px',
-          borderRadius: '8px',
-          border: '1px solid #e0e0e0',
-          background: '#fafafa',
-          transition: 'background 0.15s, border-color 0.15s',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = '#f0f0f0';
-          e.currentTarget.style.borderColor = '#ccc';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = '#fafafa';
-          e.currentTarget.style.borderColor = '#e0e0e0';
-        }}
-      >
-        Open app settings
-        <ArrowUpRight color="#333" />
-      </a>
-      <div
-        style={{
-          display: 'flex',
-          gap: '16px',
-          marginTop: '32px',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          alignItems: 'flex-start',
-        }}
-      >
-        {CATEGORIES.map((category) => (
-          <CategoryCard
-            key={category.title}
-            title={category.title}
-            color={category.color}
-            items={category.items}
-            rotation={category.rotation}
+      {headers.length === 0 ? (
+        <div style={{ border: '2px dashed #ccc', padding: '40px', textAlign: 'center', borderRadius: '8px' }}>
+          <input 
+            type="file" 
+            accept=".xlsx, .xls, .csv" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            style={{ display: 'none' }}
           />
-        ))}
-      </div>
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            style={{ padding: '10px 20px', background: '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            Select Excel File
+          </button>
+        </div>
+      ) : (
+        <div>
+          <h2 style={{ fontSize: '18px', marginBottom: '10px' }}>Map Columns</h2>
+          <p style={{ marginBottom: '20px', color: '#666' }}>Found {rows.length} rows. Please map your columns below.</p>
+          
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
+                <th style={{ padding: '10px' }}>Standard Field</th>
+                <th style={{ padding: '10px' }}>Excel Column</th>
+              </tr>
+            </thead>
+            <tbody>
+              {STANDARD_FIELDS.map((field) => (
+                <tr key={field.key} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '10px' }}>{field.label}</td>
+                  <td style={{ padding: '10px' }}>
+                    <select
+                      value={mapping[field.key] || ''}
+                      onChange={(e) => handleMappingChange(field.key, e.target.value)}
+                      style={{ padding: '8px', width: '100%', borderRadius: '4px', border: '1px solid #ccc' }}
+                    >
+                      <option value="">-- Ignore --</option>
+                      {headers.map((h, i) => (
+                        <option key={i} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              onClick={handleSubmit} 
+              disabled={isUploading}
+              style={{ padding: '10px 20px', background: isUploading ? '#999' : '#007BFF', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              {isUploading ? 'Ingesting...' : 'Ingest Data'}
+            </button>
+            <button 
+              onClick={() => { setHeaders([]); setRows([]); }}
+              style={{ padding: '10px 20px', background: '#f5f5f5', color: '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div style={{ marginTop: '20px', padding: '15px', background: result.startsWith('Error') ? '#FEE' : '#EFE', border: `1px solid ${result.startsWith('Error') ? '#FCC' : '#CFC'}`, borderRadius: '4px' }}>
+          {result}
+        </div>
+      )}
     </div>
   );
 };
@@ -286,6 +183,7 @@ const MainPage = () => {
 export default defineFrontComponent({
   universalIdentifier: MAIN_PAGE_FRONT_COMPONENT_UNIVERSAL_IDENTIFIER,
   name: APP_DISPLAY_NAME,
-  description: `${APP_DISPLAY_NAME} front component displaying the app logo and name`,
+  description: `${APP_DISPLAY_NAME} Front Component for Excel mapping and data curation`,
   component: MainPage,
 });
+
