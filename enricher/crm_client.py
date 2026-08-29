@@ -41,18 +41,40 @@ class TwentyCRMClient:
             logger.error(f"Error searching company {name} in Twenty CRM: {e}")
         return None
 
+    def _format_payload(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert flat dictionary into Twenty CRM nested JSON structures."""
+        payload = data.copy()
+        
+        # Domain Name
+        if "profile_url" in payload:
+            payload["domainName"] = {
+                "primaryLinkLabel": payload.pop("profile_label", "Profile"),
+                "primaryLinkUrl": payload.pop("profile_url")
+            }
+            
+        # Address
+        if "address_street" in payload or "address_city" in payload:
+            payload["address"] = {
+                "addressStreet1": payload.pop("address_street", ""),
+                "addressCity": payload.pop("address_city", "")
+            }
+            
+        return payload
+
     def upsert_company(self, company_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Creates or updates a company record in Twenty CRM."""
         name = company_data.get("name")
         if not name:
             return None
 
+        formatted_data = self._format_payload(company_data)
+
         existing = self.search_company(name)
         if existing:
             company_id = existing["id"]
             url = f"{self.api_base_url}/companies/{company_id}"
             try:
-                resp = self._request_with_retry("patch", url, headers=self.headers, json=company_data)
+                resp = self._request_with_retry("patch", url, headers=self.headers, json=formatted_data)
                 if resp.status_code in (200, 201):
                     logger.info(f"Updated company {name} ({company_id}) in Twenty CRM")
                     return resp.json().get("data", {}).get("updateCompany", existing)
@@ -62,16 +84,18 @@ class TwentyCRMClient:
                 logger.error(f"Exception updating company {name}: {e}")
             return existing
         else:
-            return self.create_company(company_data)
+            return self.create_company(formatted_data)
 
     def create_company(self, company_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Creates a new company record in Twenty CRM without checking if it exists."""
         name = company_data.get("name")
         if not name:
             return None
+        
+        formatted_data = self._format_payload(company_data)
         url = f"{self.api_base_url}/companies"
         try:
-            resp = self._request_with_retry("post", url, headers=self.headers, json=company_data)
+            resp = self._request_with_retry("post", url, headers=self.headers, json=formatted_data)
             if resp.status_code in (200, 201):
                 created = resp.json().get("data", {}).get("createCompany", {})
                 logger.info(f"Created company {name} in Twenty CRM")
@@ -199,8 +223,9 @@ class TwentyCRMClient:
     def update_company(self, company_id: str, company_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Updates an existing company record in Twenty CRM by ID."""
         url = f"{self.api_base_url}/companies/{company_id}"
+        formatted_data = self._format_payload(company_data)
         try:
-            resp = self._request_with_retry("patch", url, headers=self.headers, json=company_data)
+            resp = self._request_with_retry("patch", url, headers=self.headers, json=formatted_data)
             if resp.status_code in (200, 201):
                 logger.info(f"Updated company ID {company_id} in Twenty CRM")
                 return resp.json().get("data", {}).get("updateCompany", {})

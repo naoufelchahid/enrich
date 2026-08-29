@@ -68,158 +68,125 @@ class KerixScraper:
 
         page = self.browser.new_page()
         try:
-            logger.info("Step 1: Searching Google for company domains...")
-            query = f'site:telecontact.ma OR site:kerix.net OR site:charika.ma intitle:"{clean_name}"'
-            q_enc = urllib.parse.quote(query)
+            logger.info("Establishing Cloudflare-cleared session on Kerix homepage...")
+            page.goto("https://www.kerix.net/", wait_until="networkidle", timeout=30000)
+
+            logger.info("Querying Kerix internal autocomplete API...")
+            clean_name_encoded = urllib.parse.quote(clean_name)
+            api_code = f"""() => {{
+                return fetch('/fr/search?q={clean_name_encoded}')
+                    .then(r => r.json())
+                    .catch(e => null);
+            }}"""
+            search_data = page.evaluate(api_code)
             
-            page.goto(f"https://www.google.com/search?q={q_enc}&hl=en", wait_until="networkidle", timeout=30000)
-
-            try:
-                page.evaluate("""() => {
-                    const btns = document.querySelectorAll('button');
-                    for (let b of btns) {
-                        if (b.innerText.includes('Accept all') || b.innerText.includes('Tout accepter') || b.innerText.includes('I agree')) {
-                            b.click();
-                            break;
-                        }
-                    }
-                }""")
-                page.wait_for_timeout(1000)
-            except Exception as e:
-                logger.warning(f"Failed to dismiss Google cookie banner: {e}")
-
             target_url = None
-            try:
-                page.wait_for_selector("a", timeout=5000)
-                links = page.query_selector_all("a")
-                for link in links:
-                    href = link.get_attribute("href")
-                    if href and any(d in href for d in ["kerix.net", "telecontact.ma", "charika.ma"]):
-                        if "google.com" not in href and "webcache" not in href and "translate.goog" not in href:
-                            target_url = href
-                            break
-            except Exception as e:
-                logger.warning(f"Could not find search results on Google: {e}")
+            if search_data and 'companies' in search_data:
+                companies_data = search_data['companies']
+                if isinstance(companies_data, list) and len(companies_data) > 0:
+                    slug = companies_data[0].get('slug')
+                    if slug:
+                        target_url = f"https://www.kerix.net/fr/annuaire-entreprise/{slug}"
 
             if not target_url:
-                logger.info("No matching URLs found on Google.")
+                logger.info("No matching company found on Kerix API.")
                 return result
 
-            logger.info(f"Matched URL from Google: {target_url}")
+            logger.info(f"Navigating to Kerix profile: {target_url}")
+            result["kerix_url"] = target_url
+            page.goto(target_url, wait_until="networkidle", timeout=30000)
 
-            if "telecontact.ma" in target_url:
-                result["telecontact_url"] = target_url
-                page.goto(target_url, wait_until="networkidle", timeout=30000)
-                html = page.content()
-                phone_match = re.search(r"(?:Tél|Tel|Téléphone)\s*[:\.-]?\s*([\+0]\d[\d\s\.\-/]{8,15})", html, re.IGNORECASE)
-                if phone_match:
-                    result["phone"] = phone_match.group(1).strip()
-                return result
+            # Re-dismiss cookie banner if present
+            page.evaluate("""() => {
+                const wrapper = document.getElementById("cookiescript_injected_wrapper");
+                if (wrapper) wrapper.remove();
+            }""")
 
-            elif "charika.ma" in target_url:
-                result["charika_url"] = target_url
-                page.goto(target_url, wait_until="networkidle", timeout=30000)
-                html = page.content()
-                ice_match = re.search(r"ICE\s*[:\.-]?\s*(\d{15})", html, re.IGNORECASE)
+            # Click any reveal phone/details buttons
+            try:
+                tel_buttons = page.query_selector_all("a[href^='javascript:'], button:has-text('Afficher'), .show-phone")
+                for btn in tel_buttons[:3]:
+                    btn.click()
+                    page.wait_for_timeout(300)
+            except Exception:
+                pass
+
+            html = page.content()
+            soup = BeautifulSoup(html, "html.parser")
+            text = soup.get_text(separator=" ")
+
+            # 1. Effectif
+            eff_el = soup.find(lambda t: t.name == "strong" and "effectif" in t.text.lower())
+            if eff_el and eff_el.parent:
+                result["effectif"] = re.sub(r"\s+", " ", eff_el.parent.get_text().replace("Effectif:", "")).strip()
+
+            # 2. Chiffre D'affaires
+            ca_el = soup.find(lambda t: t.name == "strong" and "chiffre" in t.text.lower())
+            if ca_el and ca_el.parent:
+                result["chiffre_d_affaires"] = re.sub(r"\s+", " ", ca_el.parent.get_text().replace("Chiffre D'affaires:", "")).strip()
+
+            # 3. Capital
+            cap_el = soup.find(lambda t: t.name == "strong" and "capital" in t.text.lower())
+            if cap_el and cap_el.parent:
+                result["capital"] = re.sub(r"\s+", " ", cap_el.parent.get_text().replace("Capital:", "")).strip()
+
+            # 4. RC
+            rc_el = soup.find(lambda t: t.name == "strong" and "rc" in t.text.lower())
+            if rc_el and rc_el.parent:
+                result["rc"] = re.sub(r"\s+", " ", rc_el.parent.get_text().replace("Rc:", "")).strip()
+
+            # 5. Création
+            creation_el = soup.find(lambda t: t.name == "strong" and "création" in t.text.lower())
+            if creation_el and creation_el.parent:
+                result["creation"] = re.sub(r"\s+", " ", creation_el.parent.get_text().replace("Création:", "")).strip()
+
+            # 6. ICE
+            ice_el = soup.find(lambda t: t.name == "strong" and "ice" in t.text.lower())
+            if ice_el and ice_el.parent:
+                result["ice"] = re.sub(r"\s+", " ", ice_el.parent.get_text().replace("Ice:", "")).strip()
+            if not result["ice"]:
+                ice_match = re.search(r"ICE\s*[:\.-]?\s*(\d{15})", text, re.IGNORECASE)
                 if ice_match:
                     result["ice"] = ice_match.group(1)
-                return result
 
-            elif "kerix.net" in target_url:
-                result["kerix_url"] = target_url
-                page.goto(target_url, wait_until="networkidle", timeout=30000)
+            # 7. Dirigeants
+            dir_header = soup.find(lambda t: t.name in ["h5", "h4"] and "dirigeant" in t.text.lower())
+            if dir_header and dir_header.parent:
+                par_lists = dir_header.parent.find_all("p", class_="par-list")
+                if par_lists:
+                    dirs = [re.sub(r"\s+", " ", p.get_text()).strip() for p in par_lists]
+                    result["dirigeant"] = ", ".join([d for d in dirs if d])
+            if not result["dirigeant"]:
+                dir_match = re.search(r"(?:Dirigeant|Gérant|Responsable|CEO|Manager)\s*[:\.-]?\s*([A-Za-zÀ-ÿ\s]{3,30})", text, re.IGNORECASE)
+                if dir_match:
+                    d_val = re.sub(r'[\r\n\t×]', ' ', dir_match.group(1)).strip()
+                    d_val = re.sub(r'\s+', ' ', d_val)
+                    if len(d_val) > 2:
+                        result["dirigeant"] = d_val
 
-                # Re-dismiss cookie banner if present
-                page.evaluate("""() => {
-                    const wrapper = document.getElementById("cookiescript_injected_wrapper");
-                    if (wrapper) wrapper.remove();
-                }""")
+            # 8. Activités
+            act_header = soup.find(lambda t: t.name in ["h5", "h4"] and "activite" in t.text.lower())
+            if act_header and act_header.parent:
+                p_act = act_header.parent.find("p")
+                if p_act:
+                    result["activity"] = re.sub(r"\s+", " ", p_act.get_text()).strip()
 
-                # Click any reveal phone/details buttons
-                try:
-                    tel_buttons = page.query_selector_all("a[href^='javascript:'], button:has-text('Afficher'), .show-phone")
-                    for btn in tel_buttons[:3]:
-                        btn.click()
-                        page.wait_for_timeout(300)
-                except Exception:
-                    pass
+            # Phone extraction
+            phone_match = re.search(r"(?:Tél|Tel|Téléphone)\s*[:\.-]?\s*([\+0]\d[\d\s\.\-/]{8,15})", text, re.IGNORECASE)
+            if phone_match:
+                result["phone"] = phone_match.group(1).strip()
 
-                html = page.content()
-                soup = BeautifulSoup(html, "html.parser")
-                text = soup.get_text(separator=" ")
-
-                # 1. Effectif
-                eff_el = soup.find(lambda t: t.name == "strong" and "effectif" in t.text.lower())
-                if eff_el and eff_el.parent:
-                    result["effectif"] = re.sub(r"\s+", " ", eff_el.parent.get_text().replace("Effectif:", "")).strip()
-
-                # 2. Chiffre D'affaires
-                ca_el = soup.find(lambda t: t.name == "strong" and "chiffre" in t.text.lower())
-                if ca_el and ca_el.parent:
-                    result["chiffre_d_affaires"] = re.sub(r"\s+", " ", ca_el.parent.get_text().replace("Chiffre D'affaires:", "")).strip()
-
-                # 3. Capital
-                cap_el = soup.find(lambda t: t.name == "strong" and "capital" in t.text.lower())
-                if cap_el and cap_el.parent:
-                    result["capital"] = re.sub(r"\s+", " ", cap_el.parent.get_text().replace("Capital:", "")).strip()
-
-                # 4. RC
-                rc_el = soup.find(lambda t: t.name == "strong" and "rc" in t.text.lower())
-                if rc_el and rc_el.parent:
-                    result["rc"] = re.sub(r"\s+", " ", rc_el.parent.get_text().replace("Rc:", "")).strip()
-
-                # 5. Création
-                creation_el = soup.find(lambda t: t.name == "strong" and "création" in t.text.lower())
-                if creation_el and creation_el.parent:
-                    result["creation"] = re.sub(r"\s+", " ", creation_el.parent.get_text().replace("Création:", "")).strip()
-
-                # 6. ICE
-                ice_el = soup.find(lambda t: t.name == "strong" and "ice" in t.text.lower())
-                if ice_el and ice_el.parent:
-                    result["ice"] = re.sub(r"\s+", " ", ice_el.parent.get_text().replace("Ice:", "")).strip()
-                if not result["ice"]:
-                    ice_match = re.search(r"ICE\s*[:\.-]?\s*(\d{15})", text, re.IGNORECASE)
-                    if ice_match:
-                        result["ice"] = ice_match.group(1)
-
-                # 7. Dirigeants
-                dir_header = soup.find(lambda t: t.name in ["h5", "h4"] and "dirigeant" in t.text.lower())
-                if dir_header and dir_header.parent:
-                    par_lists = dir_header.parent.find_all("p", class_="par-list")
-                    if par_lists:
-                        dirs = [re.sub(r"\s+", " ", p.get_text()).strip() for p in par_lists]
-                        result["dirigeant"] = ", ".join([d for d in dirs if d])
-                if not result["dirigeant"]:
-                    dir_match = re.search(r"(?:Dirigeant|Gérant|Responsable|CEO|Manager)\s*[:\.-]?\s*([A-Za-zÀ-ÿ\s]{3,30})", text, re.IGNORECASE)
-                    if dir_match:
-                        d_val = re.sub(r'[\r\n\t×]', ' ', dir_match.group(1)).strip()
-                        d_val = re.sub(r'\s+', ' ', d_val)
-                        if len(d_val) > 2:
-                            result["dirigeant"] = d_val
-
-                # 8. Activités
-                act_header = soup.find(lambda t: t.name in ["h5", "h4"] and "activite" in t.text.lower())
-                if act_header and act_header.parent:
-                    p_act = act_header.parent.find("p")
-                    if p_act:
-                        result["activity"] = re.sub(r"\s+", " ", p_act.get_text()).strip()
-
-                # Phone extraction
-                phone_match = re.search(r"(?:Tél|Tel|Téléphone)\s*[:\.-]?\s*([\+0]\d[\d\s\.\-/]{8,15})", text, re.IGNORECASE)
-                if phone_match:
-                    result["phone"] = phone_match.group(1).strip()
-
-                # Address / City
-                address_p = soup.find("p", class_="card-text")
-                if address_p:
-                    addr_text = re.sub(r"\s+", " ", address_p.get_text()).strip()
-                    if addr_text:
-                        result["address"] = addr_text
-                        
-                        # Attempt to extract city if possible
-                        city_match = re.search(r"\d{5}\s+([A-Za-zÀ-ÿ\-\s]+?)\s+\-", addr_text)
-                        if city_match:
-                            result["city"] = city_match.group(1).strip()
+            # Address / City
+            address_p = soup.find("p", class_="card-text")
+            if address_p:
+                addr_text = re.sub(r"\s+", " ", address_p.get_text()).strip()
+                if addr_text:
+                    result["address"] = addr_text
+                    
+                    # Attempt to extract city if possible
+                    city_match = re.search(r"\d{5}\s+([A-Za-zÀ-ÿ\-\s]+?)\s+\-", addr_text)
+                    if city_match:
+                        result["city"] = city_match.group(1).strip()
 
 
         except Exception as e:

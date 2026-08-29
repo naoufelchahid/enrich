@@ -3,8 +3,8 @@ import argparse
 import json
 import logging
 from enricher.crm_client import TwentyCRMClient
-from enricher.scraper import KerixScraper
-from enricher.setup_twenty_fields import ensure_twenty_company_fields
+from enricher.scraper import KerixScraper, CharikaScraper
+from enricher.ensure_twenty_fields import ensure_twenty_fields
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def main():
         return
 
     # Ensure custom company columns exist in Twenty CRM
-    ensure_twenty_company_fields(api_url, api_key)
+    ensure_twenty_fields(api_url, api_key)
 
     limit = min(args.limit, MAX_ENRICH_LIMIT)
     crm = TwentyCRMClient(api_url, api_key)
@@ -58,8 +58,17 @@ def main():
 
             logger.info(f"[{idx+1}/{len(companies)}] Processing company: {company_name}")
 
-            # Scrape company
+            # Scrape company using Kerix (relies on Google search)
             scraped = scraper.scrape_company(company_name)
+            
+            # If Google search failed (e.g. captcha), fallback to Charika direct URL guessing
+            has_kerix_data = any([scraped.get("kerix_url"), scraped.get("telecontact_url"), scraped.get("charika_url")])
+            if not has_kerix_data:
+                logger.info(f"Kerix/Google search found no results for {company_name}. Falling back to Charika direct search...")
+                charika = CharikaScraper()
+                charika_data = charika.scrape_company(company_name)
+                scraped.update(charika_data)
+
             print(f"\n================ SCRAPED JSON FOR '{company_name}' ================")
             print(json.dumps(scraped, indent=2, ensure_ascii=False))
             print("================================================================")
@@ -80,26 +89,18 @@ def main():
                 "enrichmentStatus": "company_enriched"
             }
             if scraped.get("kerix_url"):
-                payload["domainName"] = {
-                    "primaryLinkLabel": "Kerix Profile",
-                    "primaryLinkUrl": scraped["kerix_url"]
-                }
+                payload["profile_label"] = "Kerix Profile"
+                payload["profile_url"] = scraped["kerix_url"]
             elif scraped.get("telecontact_url"):
-                payload["domainName"] = {
-                    "primaryLinkLabel": "Telecontact Profile",
-                    "primaryLinkUrl": scraped["telecontact_url"]
-                }
+                payload["profile_label"] = "Telecontact Profile"
+                payload["profile_url"] = scraped["telecontact_url"]
             elif scraped.get("charika_url"):
-                payload["domainName"] = {
-                    "primaryLinkLabel": "Charika Profile",
-                    "primaryLinkUrl": scraped["charika_url"]
-                }
+                payload["profile_label"] = "Charika Profile"
+                payload["profile_url"] = scraped["charika_url"]
 
             if scraped.get("address"):
-                payload["address"] = {
-                    "addressStreet1": scraped["address"],
-                    "addressCity": scraped.get("city", "Casablanca")
-                }
+                payload["address_street"] = scraped["address"]
+                payload["address_city"] = scraped.get("city", "Casablanca")
 
             # Map custom company fields directly to CRM columns
             if scraped.get("ice"):
