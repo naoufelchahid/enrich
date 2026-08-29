@@ -1,4 +1,4 @@
-import { defineApplication } from 'twenty-sdk/define';
+import { defineApplication, FieldType } from 'twenty-sdk/define';
 
 import {
   APP_DESCRIPTION,
@@ -10,11 +10,11 @@ export default defineApplication({
   universalIdentifier: APPLICATION_UNIVERSAL_IDENTIFIER,
   displayName: APP_DISPLAY_NAME,
   description: APP_DESCRIPTION,
-  workspaceVariables: {
-    smtpHost: { type: 'string', label: 'SMTP Host', isRequired: true },
-    smtpPort: { type: 'number', label: 'SMTP Port', isRequired: true },
-    smtpUser: { type: 'string', label: 'SMTP User', isRequired: true },
-    smtpPassword: { type: 'string', label: 'SMTP Password', isRequired: true },
-    linkedinApiKey: { type: 'string', label: 'LinkedIn API Key', isRequired: true }
+  serverVariables: {
+    smtpHost: { type: FieldType.TEXT, description: 'SMTP Host', isRequired: true },
+    smtpPort: { type: FieldType.NUMBER, description: 'SMTP Port', isRequired: true },
+    smtpUser: { type: FieldType.TEXT, description: 'SMTP User', isRequired: true },
+    smtpPassword: { type: FieldType.TEXT, description: 'SMTP Password', isRequired: true, isSecret: true },
+    linkedinApiKey: { type: FieldType.TEXT, description: 'LinkedIn API Key', isRequired: true, isSecret: true }
   }
 });

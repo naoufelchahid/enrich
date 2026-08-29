@@ -1,6 +1,9 @@
 import { defineLogicFunction } from 'twenty-sdk/define';
+import { CoreApiClient } from 'twenty-client-sdk/core';
+import type { RoutePayload } from 'twenty-sdk/logic-function';
 
 export default defineLogicFunction({
+  universalIdentifier: '66a6a9be-a1c6-4d04-8b54-94efd7c2ff21',
   name: 'Data Curation Job',
   description: 'Ingests the mapped JSON from the Front Component and processes it into Company and Person records.',
   httpRouteTriggerSettings: {
@@ -8,50 +11,43 @@ export default defineLogicFunction({
     httpMethod: 'POST',
     isAuthRequired: true
   },
-  handler: async (payload: { rows: any[] }, context) => {
-    const { rows } = payload;
+  handler: async (payload: RoutePayload) => {
+    const rows = (payload.body as any)?.rows || [];
+    const client = new CoreApiClient({ runAs: 'application' });
     
     // Iterate over the mapped JSON rows and process them
-    // Creating Company and Person records via context.api
-    
-    // Using a mocked success for now, as testing seam is external network
     for (const row of rows) {
       if (!row.email) {
         // Missing critical field, save to SkippedLead
-        await context.api.graphql.request(`
-          mutation {
-            createSkippedLead(data: { reason: "Missing email", originalData: $data }) { id }
+        await client.mutation({
+          createSkippedLead: {
+            __args: { data: { reason: "Missing email", rowData: JSON.stringify(row) } },
+            id: true
           }
-        `, { data: JSON.stringify(row) });
+        });
         continue;
       }
       
-      // Upsert Company
       let companyId;
       if (row.companyName) {
-        // Mocked graphql logic
-        const companyRes = await context.api.graphql.request(`
-          mutation {
-            createCompany(data: { name: $name, domainName: $domain }) { id }
+        const companyRes = await client.mutation({
+          createCompany: {
+            __args: { data: { name: row.companyName, domainName: { primaryLinkUrl: row.companyWebsite || '' } } },
+            id: true
           }
-        `, { name: row.companyName, domain: row.companyWebsite });
+        });
         companyId = companyRes?.createCompany?.id;
       }
       
-      // Upsert Person
-      await context.api.graphql.request(`
-        mutation {
-          createPerson(data: { 
-            name: { firstName: $first, lastName: $last }, 
-            emails: [$email], 
-            companyId: $companyId 
-          }) { id }
+      await client.mutation({
+        createPerson: {
+          __args: { data: { 
+            name: { firstName: row.firstName || '', lastName: row.lastName || '' }, 
+            emails: { primaryEmail: row.email }, 
+            companyId 
+          } },
+          id: true
         }
-      `, { 
-        first: row.firstName || '', 
-        last: row.lastName || '', 
-        email: row.email, 
-        companyId 
       });
     }
 
