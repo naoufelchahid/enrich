@@ -188,6 +188,8 @@ class TwentyClient:
                 if contact.company_name and contact.company_name.strip():
                     company_record = CompanyRecord(
                         name=contact.company_name.strip(),
+                        activity_sector=contact.activity_sector,
+                        domain_name=contact.website,
                         city=contact.city,
                         address=contact.address,
                         phone_standard=contact.phone_standard,

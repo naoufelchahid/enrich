@@ -20,7 +20,13 @@ import os
 import sys
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+# Ensure project root is in sys.path for direct CLI invocation
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 import requests
 
@@ -291,16 +297,17 @@ def load_eligible_contacts(data_dir: str = "bdd") -> List[NormalizedContact]:
     """
     logger.info("Reading raw data from %s...", data_dir)
     raw_contacts = parse_all_sources(data_dir)
-    logger.info("Parsed %d contacts across sources. Applying anti-bounce hygiene...", len(raw_contacts))
-    processed = process_antibounce_pass1(raw_contacts)
-    # Filter for deliverable contacts with dirigente status prioritized
-    eligible = [
-        c for c in processed
-        if c.email and c.is_dirigeant
+    # Pre-filter: candidates having an email address, prioritizing executives
+    dirigeants_with_email = [
+        c for c in raw_contacts
+        if (c.raw_email or c.email) and c.is_dirigeant
     ]
-    if not eligible:
-        # Fallback to any deliverable contact
-        eligible = [c for c in processed if c.email]
+    candidates = dirigeants_with_email if dirigeants_with_email else [
+        c for c in raw_contacts if (c.raw_email or c.email)
+    ]
+    logger.info("Selected %d candidate contacts with email. Applying anti-bounce hygiene...", len(candidates))
+    processed = process_antibounce_pass1(candidates)
+    eligible = [c for c in processed if c.email]
 
     logger.info("Identified %d eligible deliverable contacts.", len(eligible))
     return eligible
