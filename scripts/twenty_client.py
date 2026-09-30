@@ -156,6 +156,19 @@ class TwentyClient:
         res.raise_for_status()
         return res.json() if res.content else {}
 
+    def update_campaign_status(
+        self,
+        person_id: str,
+        status: Any,
+    ) -> Dict[str, Any]:
+        """Update campaign status for a person in Twenty CRM."""
+        val = status.value if hasattr(status, "value") else str(status)
+        payload = {"campaignStatus": val}
+        endpoint = f"{self.base_url}/rest/people/{person_id}"
+        res = requests.patch(endpoint, json=payload, headers=self.headers)
+        res.raise_for_status()
+        return res.json() if res.content else {}
+
     def batch_sync(
         self,
         contacts: List[NormalizedContact],

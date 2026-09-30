@@ -145,6 +145,24 @@ def test_purge_bounced_email(client):
 
 
 @responses.activate
+def test_update_campaign_status(client):
+    responses.add(
+        responses.PATCH,
+        "http://localhost:3005/rest/people/person-888",
+        json={"data": {"updatePerson": {"id": "person-888"}}},
+        status=200,
+    )
+    result = client.update_campaign_status(
+        person_id="person-888",
+        status=CampaignStatusEnum.EMAIL_DELIVERED,
+    )
+    assert len(responses.calls) == 1
+    req_body = json.loads(responses.calls[0].request.body)
+    assert req_body["campaignStatus"] == CampaignStatusEnum.EMAIL_DELIVERED.value
+    assert result.get("data", {}).get("updatePerson", {}).get("id") == "person-888"
+
+
+@responses.activate
 def test_batch_sync(client):
     # Mock company creation (only called once due to deduplication)
     responses.add(
