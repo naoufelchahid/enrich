@@ -318,13 +318,23 @@ def check_return_path_mx(
     domain: str,
     return_subdomain: str = "send",
     resolver: Optional[dns.resolver.Resolver] = None,
-    expected_mx_contains: str = "amazonses.com",
+    expected_mx_contains: Union[str, List[str]] = "amazonses.com",
 ) -> CheckResult:
     """Verify MX record on Return-Path host (send.sales.contextelab.ma)."""
     if resolver is None:
         resolver = get_resolver()
 
     return_host = f"{return_subdomain}.{domain}"
+    allowed_patterns = (
+        [expected_mx_contains]
+        if isinstance(expected_mx_contains, str)
+        else list(expected_mx_contains)
+    )
+    # Support both AWS SES legacy and Resend modern rmta.net infrastructure
+    for default_pat in ["amazonses.com", "rmta.net", "resend.com", "resend.email"]:
+        if default_pat not in allowed_patterns:
+            allowed_patterns.append(default_pat)
+
     expected_desc = f"MX record pointing to {expected_mx_contains} with priority 10 on {return_host}"
 
     try:
@@ -335,7 +345,7 @@ def check_return_path_mx(
         for rdata in mx_answers:
             exchange = rdata.exchange.to_text().rstrip(".")
             mx_records.append(f"{rdata.preference} {exchange}")
-            if expected_mx_contains.lower() in exchange.lower():
+            if any(pat.lower() in exchange.lower() for pat in allowed_patterns):
                 has_expected_target = True
 
         if not mx_records:
@@ -426,7 +436,8 @@ def check_return_path_spf(
             )
 
         spf = spf_records[0]
-        if expected_include.lower() not in spf.lower():
+        valid_resend_markers = [expected_include.lower(), "amazonses.com", "rmta.net", "resend.com", "52.3.252.119", "199.249.231.0"]
+        if not any(marker in spf.lower() for marker in valid_resend_markers):
             return CheckResult(
                 name="Return-Path SPF",
                 record_type="TXT",
