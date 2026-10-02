@@ -92,7 +92,8 @@ def test_dispatcher_payload_construction():
     assert payload["reply_to"] == "n.chahid@contextelab.ma"
     assert payload["to"] == ["r.amrani@atlasfinance.ma"]
     assert "Atlas Finance" in payload["subject"]
-    assert "Rachid" in payload["html"]
+    assert "Rachid" in payload["text"]
+    assert "html" not in payload
     assert payload["tags"] == [{"name": "variant", "value": "A"}]
 
 

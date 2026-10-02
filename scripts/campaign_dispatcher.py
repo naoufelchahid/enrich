@@ -102,14 +102,14 @@ class CampaignDispatcher:
         if not contact.email:
             raise ValueError("Contact does not have an active email address.")
 
-        subject, html_body = render_email_template(variant, contact)
+        subject, text_body = render_email_template(variant, contact)
 
         payload: Dict[str, Any] = {
             "from": self.from_email,
             "to": [contact.email],
             "reply_to": self.reply_to,
             "subject": subject,
-            "html": html_body,
+            "text": text_body,
             "tags": [
                 {"name": "variant", "value": variant},
             ],
@@ -170,14 +170,17 @@ class CampaignDispatcher:
             "Authorization": f"Bearer {self.resend_api_key}",
             "Content-Type": "application/json",
         }
-        api_payload = {
+        api_payload: Dict[str, Any] = {
             "from": payload["from"],
             "to": payload["to"],
             "reply_to": payload["reply_to"],
             "subject": payload["subject"],
-            "html": payload["html"],
             "tags": payload.get("tags", []),
         }
+        if "text" in payload:
+            api_payload["text"] = payload["text"]
+        if "html" in payload:
+            api_payload["html"] = payload["html"]
 
         res = requests.post(
             RESEND_API_URL,
