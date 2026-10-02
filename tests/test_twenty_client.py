@@ -37,9 +37,14 @@ def test_upsert_company(client):
     assert len(responses.calls) == 1
     req_body = json.loads(responses.calls[0].request.body)
     assert req_body["name"] == "Atlas SARL"
-    assert req_body["domainName"] == "atlas.ma"
-    assert req_body["city"] == "Casablanca"
-    assert req_body["address"] == "10 Boulevard Zerktouni"
+    assert req_body["domainName"] == {
+        "primaryLinkLabel": "atlas.ma",
+        "primaryLinkUrl": "https://atlas.ma",
+    }
+    assert req_body["address"] == {
+        "addressStreet1": "10 Boulevard Zerktouni",
+        "addressCity": "Casablanca",
+    }
 
 
 @responses.activate
@@ -92,7 +97,11 @@ def test_upsert_person_with_clean_email(client):
     assert req_body["jobTitle"] == "DG"
     assert req_body["companyId"] == "comp-1"
     assert req_body["emails"] == {"primaryEmail": "hassan@atlas.ma"}
-    assert req_body["phones"] == {"primaryPhone": "0661000000"}
+    assert req_body["phones"] == {
+        "primaryPhoneNumber": "0661000000",
+        "primaryPhoneCountryCode": "MA",
+        "primaryPhoneCallingCode": "+212",
+    }
     assert req_body["campaignStatus"] == CampaignStatusEnum.READY_TO_MAIL.value
     assert req_body["enrichmentStatus"] == EnrichmentStatusEnum.COMPLET.value
 

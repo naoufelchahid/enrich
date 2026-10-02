@@ -70,12 +70,27 @@ class TwentyClient:
             )
             return self._company_cache[normalized_name]
 
-        payload = {
+        payload: Dict[str, Any] = {
             "name": company.name,
-            "domainName": company.domain_name or "",
-            "address": company.address or "",
-            "city": company.city or "",
         }
+        if company.domain_name and company.domain_name.strip():
+            clean_dom = company.domain_name.strip()
+            label = clean_dom.replace("https://", "").replace("http://", "").rstrip("/")
+            url = clean_dom if clean_dom.startswith("http") else f"https://{clean_dom}"
+            payload["domainName"] = {
+                "primaryLinkLabel": label,
+                "primaryLinkUrl": url,
+            }
+        if company.address or company.city:
+            addr_obj: Dict[str, Any] = {}
+            if company.address:
+                addr_obj["addressStreet1"] = company.address
+            if company.city:
+                addr_obj["addressCity"] = company.city
+            payload["address"] = addr_obj
+        if company.activity_sector:
+            payload["activitySector"] = company.activity_sector
+
         endpoint = f"{self.base_url}/rest/companies"
         res = requests.post(endpoint, json=payload, headers=self.headers)
         res.raise_for_status()
@@ -130,10 +145,17 @@ class TwentyClient:
                 )
 
         if contact.phone_mobile:
-            payload["phones"] = {"primaryPhone": contact.phone_mobile}
+            payload["phones"] = {
+                "primaryPhoneNumber": contact.phone_mobile,
+                "primaryPhoneCountryCode": "MA",
+                "primaryPhoneCallingCode": "+212",
+            }
 
         if contact.city:
             payload["city"] = contact.city
+
+        if contact.source_file:
+            payload["sourceFile"] = contact.source_file
 
         endpoint = f"{self.base_url}/rest/people"
         res = requests.post(endpoint, json=payload, headers=self.headers)
