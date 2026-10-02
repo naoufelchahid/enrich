@@ -149,6 +149,21 @@ def process_antibounce_pass1(
     5. DNS MX record validation -> purge email (None), mark INVALID & A_ENRICHIR_EMAIL_INVALIDE.
     6. Deliverable emails keep email set, status DELIVRABLE & COMPLET.
     """
+    # Pre-warm DNS MX cache concurrently for unique valid domains
+    unique_domains = set()
+    for c in contacts:
+        if c.raw_email:
+            em = c.raw_email.strip().lower()
+            if validate_email_syntax(em):
+                dom = em.split("@")[-1]
+                if not is_disposable_domain(dom) and dom not in MX_CACHE:
+                    unique_domains.add(dom)
+
+    if unique_domains:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=30) as executor:
+            list(executor.map(check_dns_mx, unique_domains))
+
     seen_emails = set()
     output: List[NormalizedContact] = []
 
