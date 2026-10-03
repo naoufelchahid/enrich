@@ -15,8 +15,15 @@ def validate_email_copy(subject: str, body: str) -> Tuple[bool, List[str]]:
         errors.append(f"Subject word count must be between 2 and 4 words (got {len(subject_words)}: '{subject}')")
 
     # 2. Zero HTML
-    if HTML_TAG_PATTERN.search(body) or "<" in body or ">" in body:
-        errors.append("HTML tags detected. Email body must be 100% plain text.")
+    if (
+        HTML_TAG_PATTERN.search(body)
+        or "<" in body
+        or ">" in body
+        or HTML_TAG_PATTERN.search(subject)
+        or "<" in subject
+        or ">" in subject
+    ):
+        errors.append("HTML tags detected. Email subject and body must be 100% plain text.")
 
     # 3. Word count (50 to 85 words)
     # Count words in body excluding signature if standard
@@ -61,7 +68,17 @@ def compose_tailored_email(lead: Dict[str, Any], career_data: Optional[Dict[str,
     company = lead.get("company_name") or "votre entreprise"
     job = lead.get("job_title") or "dirigeant"
 
-    subject = f"question sur {company}"
+    company_words = company.strip().split()
+    if len(company_words) <= 2:
+        subject = f"question sur {company.strip()}"
+    else:
+        company_short = " ".join(company_words[:2])
+        subject = f"question sur {company_short}"
+
+    if len(subject.split()) > 4 and company_words:
+        subject = f"question {company_words[0]}"
+    elif len(subject.split()) < 2:
+        subject = "question sur entreprise"
 
     # Draft crafted to be between 50 and 85 words, 0 HTML, single CTA
     body = (
@@ -78,8 +95,20 @@ def compose_tailored_email(lead: Dict[str, Any], career_data: Optional[Dict[str,
 
     is_valid, errors = validate_email_copy(subject, body)
     if not is_valid:
-        # Fallback adjustment if needed
-        pass
+        # Fallback adjustment: if body is too long due to lengthy company name, use shortened company name
+        company_display = " ".join(company_words[:2]) if len(company_words) > 2 else company
+        body = (
+            f"Bonjour {first_name},\n\n"
+            f"Je me permets de vous contacter car je suis de près l'évolution de {company_display} au Maroc. "
+            f"Chez Contexte Lab à Casablanca, nous accompagnons les décideurs comme vous dans l'automatisation "
+            f"intelligente de leurs processus métiers et l'exploitation concrète de leurs données.\n\n"
+            f"Seriez-vous ouvert à un rapide échange informel de 5 minutes cette semaine pour évaluer "
+            f"la pertinence de cette approche pour {company_display} ?\n\n"
+            f"Bien à vous,\n"
+            f"Naoufel Chahid\n"
+            f"Contexte Lab Casablanca"
+        )
+        is_valid, errors = validate_email_copy(subject, body)
 
     return {
         "subject": subject,

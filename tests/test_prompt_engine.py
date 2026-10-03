@@ -103,3 +103,36 @@ def test_compose_tailored_email_defaults():
     is_valid, errors = validate_email_copy(msg["subject"], msg["body"])
     assert is_valid, f"Default generated email failed validation: {errors}"
 
+
+def test_compose_tailored_email_long_company_name():
+    lead = {
+        "first_name": "Mohamed",
+        "last_name": "Benjelloun",
+        "company_name": "Banque Centrale Populaire du Maroc",
+        "job_title": "Directeur Général",
+    }
+    msg = compose_tailored_email(lead)
+    assert "subject" in msg
+    assert "body" in msg
+    subject_words = msg["subject"].strip().split()
+    assert 2 <= len(subject_words) <= 4, f"Subject words count invalid: {subject_words}"
+    is_valid, errors = validate_email_copy(msg["subject"], msg["body"])
+    assert is_valid, f"Generated email for long company failed validation: {errors}"
+
+
+def test_validate_email_copy_rejects_html_in_subject():
+    bad_subject = "<b>question</b> sur Atlas"  # 3 words, but has HTML tags
+    valid_body = (
+        "Bonjour Karim,\n\n"
+        "J'ai remarqué le développement récent d'Atlas Tech sur le marché marocain. "
+        "À Contexte Lab à Casablanca, nous accompagnons les dirigeants dans l'optimisation "
+        "de leurs processus opérationnels grâce à l'intelligence artificielle appliquée.\n\n"
+        "Seriez-vous ouvert à un échange informel de 5 minutes cette semaine pour explorer "
+        "si ces approches sont pertinentes pour vos équipes ?\n\n"
+        "Bien à vous,\nNaoufel Chahid"
+    )
+    is_valid, errors = validate_email_copy(bad_subject, valid_body)
+    assert is_valid is False
+    assert any("HTML" in e for e in errors)
+
+
