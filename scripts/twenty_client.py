@@ -235,3 +235,115 @@ class TwentyClient:
             "people": people_ids,
             "errors": errors,
         }
+
+    def find_company_by_name(self, name: str) -> Optional[str]:
+        """Look up existing company by name in Twenty CRM."""
+        norm_name = name.strip().lower()
+        if norm_name in self._company_cache:
+            return self._company_cache[norm_name]
+
+        endpoint = f"{self.base_url}/rest/companies"
+        try:
+            res = requests.get(
+                endpoint,
+                params={"filter": f'{{"name":{{"eq":"{name.strip()}"}}}}'},
+                headers=self.headers,
+            )
+            res.raise_for_status()
+            data = res.json()
+            companies = data.get("data", {}).get("companies", [])
+            if companies:
+                cid = str(companies[0].get("id"))
+                self._company_cache[norm_name] = cid
+                return cid
+        except Exception as e:
+            logger.error("Error looking up company '%s': %s", name, e)
+        return None
+
+    def find_person_by_id(self, person_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch person record from Twenty CRM."""
+        endpoint = f"{self.base_url}/rest/people/{person_id}"
+        try:
+            res = requests.get(endpoint, headers=self.headers)
+            res.raise_for_status()
+            data = res.json()
+            return data.get("data", {})
+        except Exception as e:
+            logger.error("Error fetching person %s: %s", person_id, e)
+            return None
+
+    def create_opportunity(
+        self,
+        name: str,
+        stage: str,
+        person_id: str,
+        company_id: Optional[str] = None,
+        amount: float = 0.0,
+    ) -> str:
+        """Create a new commercial Opportunity in Twenty CRM."""
+        payload: Dict[str, Any] = {
+            "name": name,
+            "stage": stage,
+            "pointOfContactId": person_id,
+        }
+        if company_id:
+            payload["companyId"] = company_id
+        if amount > 0:
+            payload["amount"] = {"amountMicros": int(amount * 1_000_000), "currencyCode": "MAD"}
+
+        endpoint = f"{self.base_url}/rest/opportunities"
+        res = requests.post(endpoint, json=payload, headers=self.headers)
+        res.raise_for_status()
+        data = res.json() if res.content else {}
+        return self._extract_id(data, "opportunity")
+
+    def sync_career_change(
+        self,
+        person_id: str,
+        harvest_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Proactively manage job/company change in Twenty CRM."""
+        person = self.find_person_by_id(person_id) or {}
+        existing_company_info = person.get("company") or {}
+        old_company_name = existing_company_info.get("name") or ""
+        new_company_name = harvest_data.get("current_company_name", "").strip()
+        new_job_title = harvest_data.get("current_job_title", "").strip()
+
+        if not new_company_name or new_company_name.lower() == old_company_name.lower():
+            # No company change, simple metadata refresh
+            return {
+                "career_changed": False,
+                "old_company": old_company_name,
+                "new_company": old_company_name,
+            }
+
+        # Company changed: check if new company exists or create it
+        new_comp_id = self.find_company_by_name(new_company_name)
+        if not new_comp_id:
+            co_record = CompanyRecord(
+                name=new_company_name,
+                domain_name=harvest_data.get("company_website"),
+                activity_sector=harvest_data.get("company_industry"),
+                source_file="apify_harvest",
+            )
+            new_comp_id = self.upsert_company(co_record)
+
+        # Update person with new companyId, jobTitle, and enrichmentStatus
+        patch_payload = {
+            "companyId": new_comp_id,
+            "enrichmentStatus": "ENRICHED",
+        }
+        if new_job_title:
+            patch_payload["jobTitle"] = new_job_title
+
+        endpoint = f"{self.base_url}/rest/people/{person_id}"
+        patch_res = requests.patch(endpoint, json=patch_payload, headers=self.headers)
+        patch_res.raise_for_status()
+
+        return {
+            "career_changed": True,
+            "old_company": old_company_name,
+            "new_company": new_company_name,
+            "new_company_id": new_comp_id,
+            "new_job_title": new_job_title,
+        }
