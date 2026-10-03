@@ -12,6 +12,7 @@ avec le client mail Thunderbird ou tout serveur SMTP/IMAP standard :
 """
 
 import email
+from email import policy
 import imaplib
 import json
 import logging
@@ -216,6 +217,16 @@ class MCPMailServer:
                 "dry_run": False,
             }
 
+    @staticmethod
+    def _quote_folder(folder: str) -> str:
+        """
+        Assure que les noms de dossiers contenant des espaces sont correctement protégés pour IMAP.
+        """
+        folder_str = str(folder).strip()
+        if " " in folder_str and not (folder_str.startswith('"') and folder_str.endswith('"')):
+            return f'"{folder_str}"'
+        return folder_str
+
     def archive_sent_email(self, raw_msg_bytes: bytes, folder: str = "Sent") -> bool:
         """
         Archive un message envoyé dans le dossier Sent via IMAP append.
@@ -228,7 +239,8 @@ class MCPMailServer:
             with imaplib.IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.username, self.password)
                 date_time = imaplib.Time2Internaldate(time.time())
-                status, _ = imap.append(folder, r"(\Seen)", date_time, raw_msg_bytes)
+                quoted_folder = self._quote_folder(folder)
+                status, _ = imap.append(quoted_folder, r"(\Seen)", date_time, raw_msg_bytes)
                 return status == "OK"
         except Exception as e:
             logger.error(f"Échec d'archivage dans {folder}: {e}")
@@ -253,7 +265,8 @@ class MCPMailServer:
         try:
             with imaplib.IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.username, self.password)
-                imap.select(folder)
+                quoted_folder = self._quote_folder(folder)
+                imap.select(quoted_folder)
                 search_crit = "UNSEEN" if unread_only else "ALL"
                 status, data = imap.search(None, search_crit)
                 if status != "OK" or not data or not data[0]:
@@ -267,13 +280,13 @@ class MCPMailServer:
                     )
                     if res == "OK" and msg_data and msg_data[0]:
                         raw_header = msg_data[0][1]
-                        parsed = email.message_from_bytes(raw_header)
+                        parsed = email.message_from_bytes(raw_header, policy=policy.default)
                         results.append({
                             "id": mid_str,
-                            "from": parsed.get("From", ""),
-                            "subject": parsed.get("Subject", ""),
-                            "date": parsed.get("Date", ""),
-                            "message_id": parsed.get("Message-ID", ""),
+                            "from": str(parsed.get("From") or ""),
+                            "subject": str(parsed.get("Subject") or ""),
+                            "date": str(parsed.get("Date") or ""),
+                            "message_id": str(parsed.get("Message-ID") or ""),
                             "folder": folder,
                         })
                 return results
@@ -296,12 +309,13 @@ class MCPMailServer:
         try:
             with imaplib.IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.username, self.password)
-                imap.select(folder)
+                quoted_folder = self._quote_folder(folder)
+                imap.select(quoted_folder)
                 res, msg_data = imap.fetch(str(message_id), "(RFC822)")
                 if res != "OK" or not msg_data or not msg_data[0]:
                     return {}
                 raw_email = msg_data[0][1]
-                msg = email.message_from_bytes(raw_email)
+                msg = email.message_from_bytes(raw_email, policy=policy.default)
 
                 body_text = ""
                 body_html = ""
@@ -327,14 +341,14 @@ class MCPMailServer:
                         body_text = payload.decode(charset, errors="replace")
 
                 body = body_text if body_text else body_html
-                headers = {k: v for k, v in msg.items()}
+                headers = {k: str(v) for k, v in msg.items()}
                 return {
                     "id": str(message_id),
-                    "from": msg.get("From", ""),
-                    "to": msg.get("To", ""),
-                    "subject": msg.get("Subject", ""),
-                    "date": msg.get("Date", ""),
-                    "message_id": msg.get("Message-ID", ""),
+                    "from": str(msg.get("From") or ""),
+                    "to": str(msg.get("To") or ""),
+                    "subject": str(msg.get("Subject") or ""),
+                    "date": str(msg.get("Date") or ""),
+                    "message_id": str(msg.get("Message-ID") or ""),
                     "body": body,
                     "folder": folder,
                     "headers": headers,
@@ -363,8 +377,10 @@ class MCPMailServer:
         try:
             with imaplib.IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.username, self.password)
-                imap.select(source_folder)
-                res, _ = imap.copy(str(message_id), target_folder)
+                src = self._quote_folder(source_folder)
+                tgt = self._quote_folder(target_folder)
+                imap.select(src)
+                res, _ = imap.copy(str(message_id), tgt)
                 if res != "OK":
                     return False
                 imap.store(str(message_id), "+FLAGS", r"(\Deleted)")
@@ -382,7 +398,7 @@ class MCPMailServer:
         """
         req_id = request.get("id")
         method = request.get("method")
-        params = request.get("params", {})
+        params = request.get("params") or {}
 
         if method == "tools/list":
             return {
@@ -395,7 +411,7 @@ class MCPMailServer:
 
         elif method == "tools/call":
             tool_name = params.get("name")
-            arguments = params.get("arguments", {})
+            arguments = params.get("arguments") or {}
 
             if tool_name == "send_email":
                 try:

@@ -319,3 +319,90 @@ def test_run_stdio_server():
     res_2 = json.loads(output[1])
     assert res_2["error"]["code"] == -32700
 
+
+def test_rfc2047_header_decoding_live_imap():
+    server = MCPMailServer(dry_run=False)
+    with patch("imaplib.IMAP4_SSL") as mock_imap:
+        mock_instance = MagicMock()
+        mock_imap.return_value.__enter__.return_value = mock_instance
+        mock_instance.search.return_value = ("OK", [b"1"])
+
+        # RFC 2047 encoded Subject and From with French accents
+        # "Jérôme Dupont" -> =?utf-8?b?SsOpcsO0bWUgRHVwb250?=
+        # "Re: question sur l'automatisation" -> =?utf-8?q?Re=3A_question_sur_l'automatisation?=
+        raw_headers = (
+            b"From: =?utf-8?b?SsOpcsO0bWUgRHVwb250?= <jerome@example.fr>\r\n"
+            b"Subject: =?utf-8?q?Re=3A_question_sur_l'automatisation?=\r\n"
+            b"Date: Mon, 1 Jan 2026 10:00:00 +0000\r\n"
+            b"Message-ID: <msg123@example.fr>\r\n\r\n"
+        )
+        mock_instance.fetch.return_value = ("OK", [(b"1 (RFC822)", raw_headers + b"Bonjour Jerome")])
+
+        msgs = server.list_inbox_messages()
+        assert len(msgs) == 1
+        assert msgs[0]["subject"] == "Re: question sur l'automatisation"
+        assert "Jérôme Dupont" in msgs[0]["from"]
+
+        details = server.get_message_details("1")
+        assert details["subject"] == "Re: question sur l'automatisation"
+        assert "Jérôme Dupont" in details["from"]
+
+
+def test_imap_folder_quoting_with_spaces():
+    # Helper direct test
+    assert MCPMailServer._quote_folder("Sent Items") == '"Sent Items"'
+    assert MCPMailServer._quote_folder('"Already Quoted"') == '"Already Quoted"'
+    assert MCPMailServer._quote_folder("INBOX") == "INBOX"
+
+    server = MCPMailServer(dry_run=False)
+    with patch("imaplib.IMAP4_SSL") as mock_imap:
+        mock_instance = MagicMock()
+        mock_imap.return_value.__enter__.return_value = mock_instance
+        mock_instance.append.return_value = ("OK", [b"Append completed"])
+        mock_instance.copy.return_value = ("OK", [b"Copy completed"])
+        mock_instance.search.return_value = ("OK", [b""])
+
+        # archive_sent_email quoting
+        server.archive_sent_email(b"test raw", folder="Sent Items")
+        call_folder = mock_instance.append.call_args[0][0]
+        assert call_folder == '"Sent Items"'
+
+        # list_inbox_messages quoting
+        server.list_inbox_messages(folder="Bounces Archives")
+        mock_instance.select.assert_called_with('"Bounces Archives"')
+
+        # move_message quoting
+        server.move_message("10", "Old Box", "New Box")
+        mock_instance.select.assert_called_with('"Old Box"')
+        mock_instance.copy.assert_called_with("10", '"New Box"')
+
+
+def test_handle_jsonrpc_null_arguments_and_params(mock_mail_server):
+    # Test params with null arguments
+    req_null_args = {
+        "jsonrpc": "2.0",
+        "id": 100,
+        "method": "tools/call",
+        "params": {
+            "name": "list_inbox_messages",
+            "arguments": None,
+        },
+    }
+    resp = mock_mail_server.handle_jsonrpc(req_null_args)
+    assert resp["jsonrpc"] == "2.0"
+    assert resp["id"] == 100
+    assert "result" in resp
+
+    # Test request with params = None
+    req_null_params = {
+        "jsonrpc": "2.0",
+        "id": 101,
+        "method": "tools/list",
+        "params": None,
+    }
+    resp_list = mock_mail_server.handle_jsonrpc(req_null_params)
+    assert resp_list["jsonrpc"] == "2.0"
+    assert resp_list["id"] == 101
+    assert "tools" in resp_list["result"]
+
+
