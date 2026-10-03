@@ -32,6 +32,11 @@ class NeverBounceClient:
             res = requests.get(NEVERBOUNCE_API_URL, params=params, timeout=10)
             res.raise_for_status()
             data = res.json()
+            if data.get("status") != "success":
+                msg = data.get("message", "NeverBounce API error")
+                logger.error("NeverBounce API error response for %s: %s", email, msg)
+                return {"status": "UNKNOWN", "raw_result": "error", "error": msg}
+
             raw_result = (data.get("result") or "unknown").lower()
             status_map = {
                 "valid": "VALID",
@@ -73,7 +78,7 @@ class NeverBounceClient:
             email = lead["raw_email"]
             result = self.check_email(email)
             st = result["status"]
-            clean_email = email if st == "VALID" else None
+            clean_email = email.strip() if st == "VALID" else None
             update_lead_neverbounce_result(db_path, lead_id, st, clean_email=clean_email)
             stats["processed"] += 1
             key = st.lower()

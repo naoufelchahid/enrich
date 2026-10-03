@@ -37,7 +37,7 @@ def test_neverbounce_check_email_invalid():
 
 def test_audit_staging_db(temp_db):
     leads = [
-        {"source_file": "BDD.xlsx", "raw_email": "good@valid.ma", "job_title": "DG"},
+        {"source_file": "BDD.xlsx", "raw_email": "  good@valid.ma  ", "job_title": "DG"},
         {"source_file": "BDD.xlsx", "raw_email": "bad@invalid.ma", "job_title": "Manager"},
         {"source_file": "BDD.xlsx", "raw_email": None, "job_title": "Commercial"},
     ]
@@ -100,3 +100,31 @@ def test_check_email_api_error():
     assert result["status"] == "UNKNOWN"
     assert result["raw_result"] == "error"
     assert "error" in result
+
+@responses.activate
+def test_check_email_api_auth_failure():
+    responses.add(
+        responses.GET,
+        "https://api.neverbounce.com/v4/single/check",
+        json={"status": "auth_failure", "message": "Authentication failed"},
+        status=200,
+    )
+    client = NeverBounceClient(api_key="bad_key")
+    result = client.check_email("test@example.com")
+    assert result["status"] == "UNKNOWN"
+    assert result["raw_result"] == "error"
+    assert result["error"] == "Authentication failed"
+
+@responses.activate
+def test_check_email_api_insufficient_credits():
+    responses.add(
+        responses.GET,
+        "https://api.neverbounce.com/v4/single/check",
+        json={"status": "insufficient_credits", "message": "Insufficient credits"},
+        status=200,
+    )
+    client = NeverBounceClient(api_key="key_no_credits")
+    result = client.check_email("test@example.com")
+    assert result["status"] == "UNKNOWN"
+    assert result["raw_result"] == "error"
+    assert result["error"] == "Insufficient credits"
