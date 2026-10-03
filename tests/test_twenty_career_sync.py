@@ -24,7 +24,7 @@ def test_sync_career_change_creates_new_company_and_updates_person():
     # Mock GET companies search for "New Corp": returns empty (new company doesn't exist yet)
     responses.add(
         responses.GET,
-        "http://localhost:3005/rest/companies?filter=%7B%22name%22%3A%7B%22eq%22%3A%22New+Corp%22%7D%7D",
+        "http://localhost:3005/rest/companies?filter=%7B%22name%22%3A+%7B%22eq%22%3A+%22New+Corp%22%7D%7D",
         json={"data": {"companies": []}},
         status=200,
     )
@@ -111,7 +111,7 @@ def test_find_company_by_name_caching():
 
     responses.add(
         responses.GET,
-        "http://localhost:3005/rest/companies?filter=%7B%22name%22%3A%7B%22eq%22%3A%22Alpha+Corp%22%7D%7D",
+        "http://localhost:3005/rest/companies?filter=%7B%22name%22%3A+%7B%22eq%22%3A+%22Alpha+Corp%22%7D%7D",
         json={"data": {"companies": [{"id": "alpha-1"}]}},
         status=200,
     )
@@ -122,3 +122,9 @@ def test_find_company_by_name_caching():
     # Second call should hit in-memory cache without an additional HTTP call
     cid2 = client.find_company_by_name("alpha corp")
     assert cid2 == "alpha-1"
+
+def test_find_company_by_name_empty_or_whitespace_returns_none():
+    client = TwentyClient(base_url="http://localhost:3005", api_key="test_key")
+    assert client.find_company_by_name("") is None
+    assert client.find_company_by_name("   ") is None
+    assert client.find_company_by_name(None) is None

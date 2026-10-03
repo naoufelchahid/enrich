@@ -44,3 +44,25 @@ def test_enrich_profile_api_failure():
     assert res["current_job_title"] == ""
     assert res["current_company_name"] == "Fallback Inc"
     assert res["past_companies"] == []
+
+@responses.activate
+def test_enrich_profile_payload_cleanliness():
+    import json
+
+    def request_callback(request):
+        body = json.loads(request.body)
+        assert "city" not in body
+        assert "fullName" not in body
+        assert body.get("company") == "Tech SA"
+        return (200, {}, json.dumps([{"companyName": "Tech SA"}]))
+
+    responses.add_callback(
+        responses.POST,
+        "https://api.apify.com/v2/acts/harvest~linkedin-enrichment/run-sync-get-dataset-items",
+        callback=request_callback,
+        content_type="application/json",
+    )
+    client = ApifyHarvestClient(api_token="apify_token_test")
+    res = client.enrich_profile(company="Tech SA")
+    assert res["current_company_name"] == "Tech SA"
+

@@ -45,6 +45,7 @@ class ApifyHarvestClient:
             "company": company,
             "city": city,
         }
+        payload = {k: v for k, v in payload.items() if v is not None}
 
         try:
             res = requests.post(APIFY_ACTOR_URL, json=payload, headers=headers, timeout=60)

@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any, Dict, List, Optional
 import requests
@@ -238,6 +239,9 @@ class TwentyClient:
 
     def find_company_by_name(self, name: str) -> Optional[str]:
         """Look up existing company by name in Twenty CRM."""
+        if not name or not name.strip():
+            return None
+
         norm_name = name.strip().lower()
         if norm_name in self._company_cache:
             return self._company_cache[norm_name]
@@ -246,7 +250,7 @@ class TwentyClient:
         try:
             res = requests.get(
                 endpoint,
-                params={"filter": f'{{"name":{{"eq":"{name.strip()}"}}}}'},
+                params={"filter": json.dumps({"name": {"eq": name.strip()}})},
                 headers=self.headers,
             )
             res.raise_for_status()
