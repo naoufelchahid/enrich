@@ -178,6 +178,7 @@ class OutreachDispatcher:
             "status": "SENT",
             "to": to_email,
             "subject": email_content["subject"],
+            "body": email_content["body"],
             "remaining_queue": len(queue),
         }
 
