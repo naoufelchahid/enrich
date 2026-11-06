@@ -1,0 +1,253 @@
+{
+  "captured_at": "2026-10-06",
+  "fullenrich": {
+    "source": "https://docs.fullenrich.com/api/v2/reference/openapi.yaml",
+    "sha256": "29391d7e33f8e28b4eeaee48d9b223780d028e8128c9e33500c62690cdbb7088",
+    "servers": [
+      {
+        "url": "https://app.fullenrich.com/api/v2"
+      }
+    ],
+    "security": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "string"
+      }
+    },
+    "contact_input": {
+      "type": "object",
+      "properties": {
+        "first_name": {
+          "type": "string"
+        },
+        "last_name": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "company_name": {
+          "type": "string"
+        },
+        "linkedin_url": {
+          "type": "string",
+          "description": "Supports standard LinkedIn profile URLs (e.g., https://www.linkedin.com/in/demoge) as well as LinkedIn Sales Navigator URLs (e.g., https://www.linkedin.com/in/ACwAACLLwaIBKi655883b)."
+        },
+        "enrich_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "contact.work_emails",
+              "contact.phones",
+              "contact.personal_emails"
+            ]
+          }
+        },
+        "custom": {
+          "type": "object",
+          "description": "Returned in the enrichment result. Use it to identify a user, a CRM contact, or to pass any other information. All values must be strings. Limited to 20 entries."
+        }
+      }
+    },
+    "batch_input": {
+      "type": "object",
+      "example": {
+        "name": "Sales Operations in London",
+        "webhook_url": "https://example.com/webhook",
+        "webhook_events": {
+          "contact_finished": "https://example.com/webhook/contact"
+        },
+        "data": [
+          {
+            "first_name": "John",
+            "last_name": "Snow",
+            "domain": "example.com",
+            "company_name": "Example Inc",
+            "professional_network_url": "https://www.linkedin.com/in/demoge/",
+            "enrich_fields": [
+              "contact.work_emails",
+              "contact.personal_emails",
+              "contact.phones"
+            ],
+            "custom": {
+              "user_id": "12584"
+            }
+          }
+        ]
+      },
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "A readable name for this enrichment (visible in your dashboard)"
+        },
+        "webhook_url": {
+          "type": "string",
+          "description": "URL that will receive a POST request when the entire enrichment is finished (all contacts processed)."
+        },
+        "webhook_events": {
+          "type": "object",
+          "description": "Optional webhook URLs for specific events during enrichment",
+          "properties": {
+            "contact_finished": {
+              "type": "string",
+              "description": "URL that receives a POST request each time a single contact is enriched, without waiting for the entire batch to complete. Useful for real-time updates."
+            }
+          }
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/RequestPostContactBulkEnrichContact"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "data"
+      ]
+    },
+    "submit_response": {
+      "type": "object",
+      "properties": {
+        "enrichment_id": {
+          "type": "string",
+          "format": "uuid",
+          "examples": [
+            "2db5ea61-1752-42cf-8ea1-ab1da060cd0a"
+          ]
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "examples": [
+            "2db5ea61-1752-42cf-8ea1-ab1da060cd0a"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "examples": [
+            "Sales Operations in London"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "examples": [
+            "FINISHED"
+          ],
+          "enum": [
+            "CREATED",
+            "IN_PROGRESS",
+            "CANCELED",
+            "CREDITS_INSUFFICIENT",
+            "FINISHED",
+            "RATE_LIMIT",
+            "UNKNOWN"
+          ]
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/RecordEnrichment"
+          }
+        },
+        "cost": {
+          "$ref": "#/components/schemas/Cost"
+        }
+      }
+    }
+  },
+  "harvest": {
+    "source": "https://raw.githubusercontent.com/HarvestAPI/harvestapi-docs/main/linkedin-api-reference/openapi.json",
+    "sha256": "76605d29ec8b1b8c217fad0e38b6959e1e055ba3c31210ad4570523aeab8257f",
+    "servers": [
+      {
+        "url": "https://api.harvestapi.io"
+      }
+    ],
+    "security": {
+      "ApiKeyAuthHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    },
+    "profile_parameters": [
+      {
+        "name": "query",
+        "in": "query",
+        "description": "URL or public identifier or profile ID of the LinkedIn profile ",
+        "schema": {
+          "type": "string",
+          "format": "url"
+        }
+      },
+      {
+        "name": "main",
+        "in": "query",
+        "description": "Set this parameter to 'true' to return only main version of the profile that you can see on LinkedIn without expanding profile sections - up to 5 experiences, 2 educations, 2 skills, etc. This version charges fewer credits",
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "findEmail",
+        "in": "query",
+        "description": "Include this parameter to find the email of the profile. It will perform SMTP verifications to ensure deliverability. It will also output emails for catch-all domains and mark them as `risky` (deliverability is unknown). This version charges more credits.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "posts_parameters": [
+      {
+        "name": "profile",
+        "in": "query",
+        "description": "Filter posts by author's profile URL or public identifier or profile ID.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "postedLimit",
+        "in": "query",
+        "description": "Filter posts by maximum posted date. Supported values: '24h', 'week', 'month'. \nSince LinkedIn doesn't offer a way to filter by date, the filtering will be done on our side, due to that the pagination might have incorrect values, because pagination is returned by LinkedIn without applying the postedLimit filter",
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "scrapePostedLimit",
+        "in": "query",
+        "description": "Post-Filter posts by maximum posted date. Supported values: '1h', '24h', 'week','month', '3months', '6months', 'year'. This parameter will be applied after receiving results from LinkedIn, the filtering will be done on our side",
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "description": "Page number for pagination",
+        "schema": {
+          "type": "integer",
+          "default": 1
+        }
+      },
+      {
+        "name": "paginationToken",
+        "in": "query",
+        "description": "Required if it was returned by the previous page. Otherwise the page will always be 1 (on LinkedIn side). Doesn't apply for all queries, usually profile posts return this token",
+        "schema": {
+          "type": "string",
+          "format": "nullable"
+        }
+      }
+    ]
+  }
+}

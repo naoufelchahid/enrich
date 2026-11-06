@@ -9,9 +9,10 @@ et synchronise les opportunités commerciales avec Twenty CRM.
 
 import logging
 import re
+from email.utils import parseaddr
 from typing import Any, Dict, List, Optional
 from scripts.circuit_breaker import CircuitBreaker
-from scripts.mcp_mail_server import MCPMailServer
+from scripts.thunderbird_client import ThunderbirdClient
 from scripts.twenty_client import TwentyClient
 
 logger = logging.getLogger(__name__)
@@ -89,10 +90,11 @@ def classify_inbound_message(sender: str, subject: str, body: str) -> str:
 
 
 def process_inbound_batch(
-    mcp_server: MCPMailServer,
+    mcp_server: ThunderbirdClient,
     twenty_client: TwentyClient,
     circuit_breaker: CircuitBreaker,
     folder: str = "INBOX",
+    on_suppression=None,
 ) -> Dict[str, int]:
     """Scan inbox, classify messages, trigger circuit breaker on bounce, and update Twenty CRM."""
     messages = mcp_server.list_inbox_messages(folder=folder)
@@ -131,6 +133,10 @@ def process_inbound_batch(
             circuit_breaker.trip(
                 reason=f"NDR received: {subject}", bounce_email=bounce_target
             )
+            if bounce_target and '@' in bounce_target:
+                summary.setdefault('bounced_emails', []).append(bounce_target.lower())
+                if on_suppression:
+                    on_suppression(bounce_target, 'BOUNCE')
             mcp_server.move_message(mid, folder, "Bounces_Archives")
 
         elif typ == "POSITIVE":
@@ -145,6 +151,11 @@ def process_inbound_batch(
 
         elif typ == "UNSUBSCRIBE":
             summary["unsubscribes"] += 1
+            address = parseaddr(sender)[1].strip().lower()
+            if address:
+                summary.setdefault('suppressed_emails', []).append(address)
+                if on_suppression:
+                    on_suppression(address, 'UNSUBSCRIBE')
             mcp_server.move_message(mid, folder, "Désinscrits")
 
         else:

@@ -5,8 +5,6 @@ from scripts.staging_db import (
     init_staging_db,
     calculate_priority_score,
     insert_staging_leads,
-    update_lead_neverbounce_result,
-    get_top_priority_leads,
     mark_lead_synced,
 )
 
@@ -73,44 +71,14 @@ def test_insert_and_query_staging_leads(temp_db):
     count = insert_staging_leads(temp_db, leads)
     assert count == 2
 
-    # Initialement PENDING -> Non retournés par get_top_priority_leads
-    priority_leads = get_top_priority_leads(temp_db, limit=10)
-    assert len(priority_leads) == 0
-
-    # Valider Karim via NeverBounce
-    update_lead_neverbounce_result(temp_db, lead_id=1, nb_status="VALID", clean_email="karim@atlastech.ma")
-
-    priority_leads = get_top_priority_leads(temp_db, limit=10)
-    assert len(priority_leads) == 1
-    assert priority_leads[0]["first_name"] == "Karim"
-    assert priority_leads[0]["neverbounce_status"] == "VALID"
-    assert priority_leads[0]["clean_email"] == "karim@atlastech.ma"
-    assert priority_leads[0]["enrichment_status"] == "READY_FOR_CRM"
-    assert priority_leads[0]["priority_score"] == 200
-
-    # Marquer comme synchronisé dans Twenty
+    with sqlite3.connect(temp_db) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM staging_leads ORDER BY id").fetchall()
+        assert [row['first_name'] for row in rows] == ['Karim', 'Sara']
+        assert all(row['neverbounce_status'] == 'PENDING' for row in rows)
+        assert all(row['email_validation_source'] is None for row in rows)
     mark_lead_synced(temp_db, lead_id=1, crm_person_id="twenty-person-uuid-123")
-    assert len(get_top_priority_leads(temp_db, limit=10)) == 0
-
-def test_neverbounce_invalid_purges_email(temp_db):
-    leads = [
-        {
-            "source_file": "BDD2.xlsx",
-            "first_name": "Yassine",
-            "last_name": "Berrada",
-            "company_name": "Berrada Immo",
-            "job_title": "Gérant",
-            "raw_email": "fake@berradaimmo.ma",
-        }
-    ]
-    insert_staging_leads(temp_db, leads)
-    update_lead_neverbounce_result(temp_db, lead_id=1, nb_status="INVALID")
-
-    conn = sqlite3.connect(temp_db)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM staging_leads WHERE id = 1").fetchone()
-    conn.close()
-
-    assert row["neverbounce_status"] == "INVALID"
-    assert row["clean_email"] is None
-    assert row["enrichment_status"] == "NEEDS_ENRICHMENT"
+    with sqlite3.connect(temp_db) as conn:
+        row = conn.execute("SELECT crm_person_id, crm_synced_at FROM staging_leads WHERE id=1").fetchone()
+        assert row[0] == "twenty-person-uuid-123"
+        assert row[1]

@@ -55,41 +55,41 @@ def test_is_dirigeant_detection():
 
 def test_normalize_phone():
     # 05 = standard fixe, 06/07 = mobile
-    fixe, mobile = normalize_phone("05 22 24 53 29")
-    assert fixe == "+212522245329"
+    fixe, mobile = normalize_phone("05 22 00 00 00")
+    assert fixe == "+212522000000"
     assert mobile is None
 
-    fixe, mobile = normalize_phone("06 61 48 47 22")
+    fixe, mobile = normalize_phone("06 61 00 00 00")
     assert fixe is None
-    assert mobile == "+212661484722"
+    assert mobile == "+212661000000"
 
     # Mobile with 07
-    fixe, mobile = normalize_phone("07 00 11 22 33")
+    fixe, mobile = normalize_phone("07 00 00 00 00")
     assert fixe is None
-    assert mobile == "+212700112233"
+    assert mobile == "+212700000000"
 
     # International prefixes
-    fixe, mobile = normalize_phone("+212 522 24 53 29")
-    assert fixe == "+212522245329"
+    fixe, mobile = normalize_phone("+212 522 00 00 00")
+    assert fixe == "+212522000000"
     assert mobile is None
 
-    fixe, mobile = normalize_phone("+212 661 48 47 22")
+    fixe, mobile = normalize_phone("+212 661 00 00 00")
     assert fixe is None
-    assert mobile == "+212661484722"
+    assert mobile == "+212661000000"
 
     # Float representation from Excel
-    fixe, mobile = normalize_phone("520484603.0")
-    assert fixe == "+212520484603"
+    fixe, mobile = normalize_phone("520000000.0")
+    assert fixe == "+212520000000"
     assert mobile is None
 
-    fixe, mobile = normalize_phone(660312424.0)
+    fixe, mobile = normalize_phone(660000000.0)
     assert fixe is None
-    assert mobile == "+212660312424"
+    assert mobile == "+212660000000"
 
     # Multi-phone slash strings (takes first valid)
-    fixe, mobile = normalize_phone("0661427135/0661168912")
+    fixe, mobile = normalize_phone("0661000000/0662000000")
     assert fixe is None
-    assert mobile == "+212661427135"
+    assert mobile == "+212661000000"
 
     # Empty / None
     assert normalize_phone(None) == (None, None)
@@ -98,27 +98,27 @@ def test_normalize_phone():
 
 def test_split_name():
     # Direct requirements from brief
-    civ, first, last = split_name("M.  Karim  Belaous Abid")
+    civ, first, last = split_name("M.  Alex  Exemple Composé")
     assert civ == "M."
-    assert first == "Karim"
-    assert last == "Belaous Abid"
+    assert first == "Alex"
+    assert last == "Exemple Composé"
 
     # Mme civility
-    civ, first, last = split_name("Mme. Karima Belaous Abid")
+    civ, first, last = split_name("Mme. Alexa Exemple Composé")
     assert civ == "Mme."
-    assert first == "Karima"
-    assert last == "Belaous Abid"
+    assert first == "Alexa"
+    assert last == "Exemple Composé"
 
     # No civility
-    civ, first, last = split_name("Karim Belaous")
+    civ, first, last = split_name("Alex Exemple")
     assert civ is None
-    assert first == "Karim"
-    assert last == "Belaous"
+    assert first == "Alex"
+    assert last == "Exemple"
 
     # Single name
-    civ, first, last = split_name("Bennis")
+    civ, first, last = split_name("Exemple")
     assert civ is None
-    assert first == "Bennis"
+    assert first == "Exemple"
     assert last == ""
 
     # None and empty
@@ -133,9 +133,9 @@ def test_fix_mojibake():
     assert fix_mojibake(None) is None
 
 
-@pytest.mark.skipif(not os.path.exists("bdd/BDD1.xlsx"), reason="BDD files not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources/BDD1.xlsx"), reason="BDD files not available")
 def test_parse_bdd1():
-    contacts = parse_bdd1("bdd/BDD1.xlsx")
+    contacts = parse_bdd1("bdd/sources/BDD1.xlsx")
     assert len(contacts) > 1000
     for c in contacts[:10]:
         assert isinstance(c, NormalizedContact)
@@ -143,46 +143,46 @@ def test_parse_bdd1():
         assert c.company_name != ""
 
 
-@pytest.mark.skipif(not os.path.exists("bdd/BDD2.xlsx"), reason="BDD files not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources/BDD2.xlsx"), reason="BDD files not available")
 def test_parse_bdd2():
-    contacts = parse_bdd2("bdd/BDD2.xlsx")
+    contacts = parse_bdd2("bdd/sources/BDD2.xlsx")
     assert len(contacts) > 1000
     # Verify executive flags
     dirigeants = [c for c in contacts if c.is_dirigeant]
     assert len(dirigeants) > 500
 
 
-@pytest.mark.skipif(not os.path.exists("bdd/BDD3.xls"), reason="BDD files not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources/BDD3.xls"), reason="BDD files not available")
 def test_parse_bdd3():
-    contacts_global = parse_bdd3_global("bdd/BDD3.xls")
+    contacts_global = parse_bdd3_global("bdd/sources/BDD3.xls")
     assert len(contacts_global) > 500
-    contacts_2023 = parse_bdd3_2023("bdd/BDD3.xls")
+    contacts_2023 = parse_bdd3_2023("bdd/sources/BDD3.xls")
     assert len(contacts_2023) > 1000
 
 
-@pytest.mark.skipif(not os.path.exists("bdd/BDD4.xlsx"), reason="BDD files not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources/BDD4.xlsx"), reason="BDD files not available")
 def test_parse_bdd4():
-    contacts = parse_bdd4("bdd/BDD4.xlsx")
+    contacts = parse_bdd4("bdd/sources/BDD4.xlsx")
     assert len(contacts) > 400
     assert any(c.city == "Tanger" for c in contacts)
 
 
-@pytest.mark.skipif(not os.path.exists("bdd/BDD5.xlsx"), reason="BDD files not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources/BDD5.xlsx"), reason="BDD files not available")
 def test_parse_bdd5():
-    contacts = parse_bdd5("bdd/BDD5.xlsx")
+    contacts = parse_bdd5("bdd/sources/BDD5.xlsx")
     assert len(contacts) > 10000
     assert any(c.is_dirigeant for c in contacts)
 
 
-@pytest.mark.skipif(not os.path.exists("bdd/BDD6.xls"), reason="BDD files not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources/BDD6.xls"), reason="BDD files not available")
 def test_parse_bdd6():
-    contacts = parse_bdd6("bdd/BDD6.xls")
+    contacts = parse_bdd6("bdd/sources/BDD6.xls")
     assert len(contacts) > 500
 
 
-@pytest.mark.skipif(not os.path.exists("bdd"), reason="BDD directory not available")
+@pytest.mark.skipif(not os.path.exists("bdd/sources"), reason="BDD source directory not available")
 def test_parse_all_sources_integration():
-    all_contacts = parse_all_sources("bdd")
+    all_contacts = parse_all_sources("bdd/sources")
     assert len(all_contacts) > 15000
     # Check that is_dirigeant is identified
     dirigeants = [c for c in all_contacts if c.is_dirigeant]

@@ -47,5 +47,6 @@ def test_circuit_breaker_corrupt_or_missing_file(tmp_path):
     # Fichier corrompu
     with open(state_path, "w", encoding="utf-8") as f:
         f.write("{invalid json...")
-    assert cb.is_tripped() is False
-    cb.assert_can_send()
+    assert cb.is_tripped() is True
+    with pytest.raises(CircuitBreakerTrippedError):
+        cb.assert_can_send()

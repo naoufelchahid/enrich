@@ -7,3 +7,34 @@ __pycache__/
 .DS_Store
 *~lock.*
 .superpowers/
+*.enrichment.lock
+*.outreach.lock
+*.before-direct-enrichment.bak
+# Local datasets and runtime state are not application source.
+bdd/
+*.sqlite
+*.sqlite-*
+.daily_send_queue*.json
+.circuit_breaker*.json
+logs/
+.venv/
+*.before-domain-assignment.bak
+*.before-linkedin-browser.bak
+*.before-outreach-journal.bak
+.firecrawl/
+*.workflow.lock
+
+# Run artifacts and temporary human data stay local.
+reports/
+outputs/
+backups/
+.scratch/
+archives/essais/
+archives/migrations/
+archives/conception/crm-model-ui-proofs.json
+archives/conception/thunderbird-exact-reply/
+
+# Private historical dossiers and local source-to-artifact inventories.
+archives/
+docs/AUDIT_DOSSIER_2026-10-12.md
+docs/CLASSEMENT.csv

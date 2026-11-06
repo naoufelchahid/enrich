@@ -2,9 +2,10 @@
 import json
 import subprocess
 import pytest
+from tests.helpers import set_test_validation
 from unittest.mock import MagicMock, patch
 from scripts.circuit_breaker import CircuitBreaker
-from scripts.mcp_mail_server import MCPMailServer
+from scripts.thunderbird_client import ThunderbirdClient
 from scripts.outreach_dispatcher import OutreachDispatcher, main
 from scripts.twenty_client import TwentyClient
 
@@ -22,8 +23,8 @@ def mock_dispatcher(tmp_path):
     )
     return dispatcher
 
-def test_prepare_daily_batch_populates_queue(mock_dispatcher):
-    from scripts.staging_db import init_staging_db, insert_staging_leads, update_lead_neverbounce_result
+def test_prepare_daily_batch_dry_run_is_preview_only(mock_dispatcher):
+    from scripts.staging_db import init_staging_db, insert_staging_leads
 
     init_staging_db(mock_dispatcher.db_path)
     leads = [
@@ -31,17 +32,19 @@ def test_prepare_daily_batch_populates_queue(mock_dispatcher):
         {"source_file": "BDD.xlsx", "first_name": "Mouna", "last_name": "Ben", "company_name": "Co2", "raw_email": "m@co2.ma", "job_title": "PDG"},
     ]
     insert_staging_leads(mock_dispatcher.db_path, leads)
-    update_lead_neverbounce_result(mock_dispatcher.db_path, 1, "VALID", "t@co1.ma")
-    update_lead_neverbounce_result(mock_dispatcher.db_path, 2, "VALID", "m@co2.ma")
+    set_test_validation(mock_dispatcher.db_path, 1, "VALID", "t@co1.ma")
+    set_test_validation(mock_dispatcher.db_path, 2, "VALID", "m@co2.ma")
 
     stats = mock_dispatcher.prepare_daily_batch(limit=2)
-    assert stats["queued"] == 2
-    assert len(mock_dispatcher.get_pending_queue()) == 2
+    assert stats['eligible'] == 2
+    assert stats["queued"] == 0
+    assert len(mock_dispatcher.get_pending_queue()) == 0
+    assert not __import__('os').path.exists(mock_dispatcher.queue_file)
 
 def test_send_next_candidate_respects_circuit_breaker(mock_dispatcher):
     mock_dispatcher.circuit_breaker.trip(reason="Previous bounce")
     result = mock_dispatcher.send_next_candidate()
-    assert result["status"] == "CIRCUIT_BREAKER_ACTIVE"
+    assert result["status"] == "LEGACY_SEND_DISABLED_USE_APPROVED_WORKFLOW"
 
 def test_send_next_candidate_executes_single_send(mock_dispatcher):
     # Queue a candidate
@@ -56,15 +59,15 @@ def test_send_next_candidate_executes_single_send(mock_dispatcher):
         }
     ])
     result = mock_dispatcher.send_next_candidate()
-    assert result["status"] == "SENT"
-    assert result["to"] == "leila@chraibi.ma"
-    assert len(mock_dispatcher.get_pending_queue()) == 0
+    assert result["status"] == "LEGACY_SEND_DISABLED_USE_APPROVED_WORKFLOW"
+    assert len(mock_dispatcher.get_pending_queue()) == 1
 
 def test_send_next_candidate_queue_empty(mock_dispatcher):
     result = mock_dispatcher.send_next_candidate()
-    assert result["status"] == "QUEUE_EMPTY"
+    assert result["status"] == "LEGACY_SEND_DISABLED_USE_APPROVED_WORKFLOW"
 
 def test_send_next_candidate_preflight_bounce_trips_breaker(mock_dispatcher):
+    mock_dispatcher.dry_run = False
     # Pre-flight inbound check detects a bounce and trips breaker
     mock_dispatcher._save_queue([
         {"id": 1, "first_name": "Ali", "company_name": "Tech", "clean_email": "ali@tech.ma"}
@@ -77,11 +80,12 @@ def test_send_next_candidate_preflight_bounce_trips_breaker(mock_dispatcher):
         mock_inbound.side_effect = side_effect
 
         result = mock_dispatcher.send_next_candidate()
-        assert result["status"] == "CIRCUIT_BREAKER_ACTIVE"
+        assert result["status"] == "LEGACY_SEND_DISABLED_USE_APPROVED_WORKFLOW"
         # Candidate should remain in queue
         assert len(mock_dispatcher.get_pending_queue()) == 1
 
 def test_review_inbox_and_sync(mock_dispatcher):
+    mock_dispatcher.dry_run = False
     with patch("scripts.outreach_dispatcher.process_inbound_batch") as mock_inbound:
         mock_inbound.return_value = {"total": 5, "bounces": 0, "positives": 1, "unsubscribes": 0, "neutral": 4}
         stats = mock_dispatcher.review_inbox_and_sync()
@@ -91,10 +95,11 @@ def test_review_inbox_and_sync(mock_dispatcher):
             mock_dispatcher.mcp_mail,
             mock_dispatcher.twenty_client,
             mock_dispatcher.circuit_breaker,
+            on_suppression=mock_dispatcher._suppress,
         )
 
 def test_prepare_daily_batch_live_syncs_twenty(tmp_path):
-    from scripts.staging_db import init_staging_db, insert_staging_leads, update_lead_neverbounce_result
+    from scripts.staging_db import init_staging_db, insert_staging_leads
 
     db_path = str(tmp_path / "staging_live.sqlite")
     queue_path = str(tmp_path / "queue_live.json")
@@ -102,10 +107,10 @@ def test_prepare_daily_batch_live_syncs_twenty(tmp_path):
 
     init_staging_db(db_path)
     leads = [
-        {"source_file": "BDD.xlsx", "first_name": "Karim", "last_name": "Alami", "company_name": "Atlas", "raw_email": "k@atlas.ma", "job_title": "DG"}
+        {"source_file": "BDD.xlsx", "first_name": "Karim", "last_name": "Alami", "company_name": "Atlas", "raw_email": "k@atlas.ma", "job_title": "Directeur général (DG)"}
     ]
     insert_staging_leads(db_path, leads)
-    update_lead_neverbounce_result(db_path, 1, "VALID", "k@atlas.ma")
+    set_test_validation(db_path, 1, "VALID", "k@atlas.ma")
 
     mock_twenty = MagicMock(spec=TwentyClient)
     mock_twenty.upsert_person.return_value = "crm-person-99"
@@ -116,6 +121,7 @@ def test_prepare_daily_batch_live_syncs_twenty(tmp_path):
         queue_file=queue_path,
         dry_run=False,
         twenty_client=mock_twenty,
+        mcp_mail=ThunderbirdClient(dry_run=True),
     )
 
     stats = dispatcher.prepare_daily_batch(limit=1, daily_send_target=1)
@@ -125,8 +131,8 @@ def test_prepare_daily_batch_live_syncs_twenty(tmp_path):
 
     # Now send candidate and verify campaign status updated
     send_res = dispatcher.send_next_candidate()
-    assert send_res["status"] == "SENT"
-    mock_twenty.update_campaign_status.assert_called_once_with("crm-person-99", "EMAIL_SENT")
+    assert send_res["status"] == "LEGACY_SEND_DISABLED_USE_APPROVED_WORKFLOW"
+    mock_twenty.update_campaign_status.assert_not_called()
 
 def test_cli_main_dry_run_tasks(capsys):
     test_args = ["outreach_dispatcher.py", "--task", "review_inbox_and_sync", "--dry-run"]
@@ -139,8 +145,11 @@ def test_cli_main_dry_run_tasks(capsys):
 
 def test_cron_agent_dispatcher_script(tmp_path):
     # Test executing scripts/cron_agent_dispatcher.sh with --task review_inbox_and_sync --dry-run
+    from scripts.staging_db import init_staging_db
+    db=tmp_path/'sas.sqlite'
+    init_staging_db(str(db)).close()
     res = subprocess.run(
-        ["bash", "scripts/cron_agent_dispatcher.sh", "--task", "review_inbox_and_sync", "--dry-run"],
+        ["bash", "scripts/cron_agent_dispatcher.sh", "--task", "review_inbox_and_sync", "--dry-run", '--db-path',str(db)],
         capture_output=True,
         text=True,
     )

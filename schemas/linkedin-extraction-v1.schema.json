@@ -1,0 +1,870 @@
+{
+  "$defs": {
+    "Activity": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "NO_VISIBLE_POSTS",
+            "NOT_OBSERVED",
+            "BLOCKED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Url"
+        },
+        "sorted_by": {
+          "enum": [
+            "RECENT",
+            "UNKNOWN"
+          ],
+          "title": "Sorted By",
+          "type": "string"
+        },
+        "exhaustive": {
+          "const": false,
+          "title": "Exhaustive",
+          "type": "boolean"
+        },
+        "posts": {
+          "items": {
+            "$ref": "#/$defs/Post"
+          },
+          "maxItems": 3,
+          "title": "Posts",
+          "type": "array"
+        },
+        "comments": {
+          "items": {
+            "$ref": "#/$defs/Comment"
+          },
+          "maxItems": 3,
+          "title": "Comments",
+          "type": "array"
+        },
+        "limitation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Limitation"
+        }
+      },
+      "required": [
+        "status",
+        "source_url",
+        "sorted_by",
+        "exhaustive",
+        "posts",
+        "limitation"
+      ],
+      "title": "Activity",
+      "type": "object"
+    },
+    "Comment": {
+      "additionalProperties": false,
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "author": {
+          "title": "Author",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published At"
+        },
+        "date_precision": {
+          "enum": [
+            "DAY",
+            "MONTH",
+            "YEAR",
+            "RELATIVE",
+            "UNKNOWN"
+          ],
+          "title": "Date Precision",
+          "type": "string"
+        },
+        "date_displayed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Date Displayed"
+        },
+        "text_status": {
+          "enum": [
+            "EXPANDED",
+            "TRUNCATED",
+            "NOT_VISIBLE"
+          ],
+          "title": "Text Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_url",
+        "author",
+        "text",
+        "published_at",
+        "date_precision",
+        "date_displayed",
+        "text_status"
+      ],
+      "title": "Comment",
+      "type": "object"
+    },
+    "Entry": {
+      "additionalProperties": false,
+      "description": "Professional item; unused fields remain null rather than guessed.",
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Organization"
+        },
+        "organization_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Organization Url"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "dates_displayed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dates Displayed"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Date"
+        },
+        "is_current": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Current"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "source_url"
+      ],
+      "title": "Entry",
+      "type": "object"
+    },
+    "Identity": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "CONFIRMED",
+            "NEEDS_REVIEW",
+            "NOT_FOUND",
+            "BLOCKED",
+            "REFERENCE"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Basis",
+          "type": "array"
+        },
+        "alternative_urls": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Alternative Urls",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "basis",
+        "alternative_urls"
+      ],
+      "title": "Identity",
+      "type": "object"
+    },
+    "OriginalPost": {
+      "additionalProperties": false,
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "author": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Author"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Text"
+        }
+      },
+      "required": [
+        "source_url",
+        "author",
+        "text"
+      ],
+      "title": "OriginalPost",
+      "type": "object"
+    },
+    "Post": {
+      "additionalProperties": false,
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "POST",
+            "REPOST",
+            "REPOST_WITH_COMMENTARY",
+            "ARTICLE"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "author": {
+          "title": "Author",
+          "type": "string"
+        },
+        "permalink": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Permalink"
+        },
+        "date_displayed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Date Displayed"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published At"
+        },
+        "date_precision": {
+          "enum": [
+            "DAY",
+            "MONTH",
+            "YEAR",
+            "RELATIVE",
+            "UNKNOWN"
+          ],
+          "title": "Date Precision",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "text_status": {
+          "enum": [
+            "EXPANDED",
+            "TRUNCATED",
+            "NOT_VISIBLE"
+          ],
+          "title": "Text Status",
+          "type": "string"
+        },
+        "original": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OriginalPost"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edited": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edited"
+        },
+        "reactions": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reactions"
+        },
+        "comments": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comments"
+        },
+        "reposts": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reposts"
+        }
+      },
+      "required": [
+        "source_url",
+        "kind",
+        "author",
+        "permalink",
+        "date_displayed",
+        "published_at",
+        "date_precision",
+        "text",
+        "text_status",
+        "original"
+      ],
+      "title": "Post",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "full_name": {
+          "title": "Full Name",
+          "type": "string"
+        },
+        "headline": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Headline"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Location"
+        },
+        "company_displayed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Company Displayed"
+        },
+        "school_displayed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "School Displayed"
+        },
+        "followers_displayed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Followers Displayed"
+        },
+        "top_skills": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Section"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "interests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Section"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "about": {
+          "$ref": "#/$defs/Section"
+        },
+        "experience": {
+          "$ref": "#/$defs/Section"
+        },
+        "education": {
+          "$ref": "#/$defs/Section"
+        },
+        "skills": {
+          "$ref": "#/$defs/Section"
+        },
+        "certifications": {
+          "$ref": "#/$defs/Section"
+        },
+        "languages": {
+          "$ref": "#/$defs/Section"
+        },
+        "services": {
+          "$ref": "#/$defs/Section"
+        },
+        "featured": {
+          "$ref": "#/$defs/Section"
+        },
+        "projects": {
+          "$ref": "#/$defs/Section"
+        },
+        "publications": {
+          "$ref": "#/$defs/Section"
+        },
+        "volunteering": {
+          "$ref": "#/$defs/Section"
+        },
+        "honors": {
+          "$ref": "#/$defs/Section"
+        },
+        "recommendations": {
+          "$ref": "#/$defs/Section"
+        }
+      },
+      "required": [
+        "source_url",
+        "full_name",
+        "headline",
+        "location",
+        "about",
+        "experience",
+        "education",
+        "skills",
+        "certifications",
+        "languages",
+        "services",
+        "featured",
+        "projects",
+        "publications",
+        "volunteering",
+        "honors",
+        "recommendations"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Section": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "NOT_OBSERVED",
+            "NOT_VISIBLE",
+            "BLOCKED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Url"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Entry"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "limitation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limitation"
+        }
+      },
+      "required": [
+        "status",
+        "source_url"
+      ],
+      "title": "Section",
+      "type": "object"
+    },
+    "Target": {
+      "additionalProperties": false,
+      "properties": {
+        "lead_id": {
+          "exclusiveMinimum": 0,
+          "title": "Lead Id",
+          "type": "integer"
+        },
+        "first_name": {
+          "minLength": 1,
+          "title": "First Name",
+          "type": "string"
+        },
+        "last_name": {
+          "minLength": 1,
+          "title": "Last Name",
+          "type": "string"
+        },
+        "company_name": {
+          "minLength": 1,
+          "title": "Company Name",
+          "type": "string"
+        },
+        "source_file": {
+          "title": "Source File",
+          "type": "string"
+        },
+        "input_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Input Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lead_id",
+        "first_name",
+        "last_name",
+        "company_name",
+        "source_file",
+        "input_sha256"
+      ],
+      "title": "Target",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "extraction_id": {
+      "maxLength": 128,
+      "minLength": 8,
+      "title": "Extraction Id",
+      "type": "string"
+    },
+    "acquisition_method": {
+      "enum": [
+        "linkedin_mcp",
+        "codex_chrome"
+      ],
+      "title": "Acquisition Method",
+      "type": "string"
+    },
+    "purpose": {
+      "enum": [
+        "CONTACT",
+        "REFERENCE"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Target"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "observed_at": {
+      "title": "Observed At",
+      "type": "string"
+    },
+    "identity": {
+      "$ref": "#/$defs/Identity"
+    },
+    "linkedin_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Linkedin Url"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Profile"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "activity": {
+      "$ref": "#/$defs/Activity"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "extraction_id",
+    "acquisition_method",
+    "purpose",
+    "target",
+    "observed_at",
+    "identity",
+    "linkedin_url",
+    "profile",
+    "activity",
+    "limitations"
+  ],
+  "title": "Extraction",
+  "type": "object"
+}

@@ -1,0 +1,16 @@
+{
+  "trackingId": "observed-job",
+  "totalRecord": 16,
+  "result": {
+    "downloadFile": "https://no2bounce.s3.eu-west-1.amazonaws.com/anonymized.csv?signature=fixture"
+  },
+  "creditDebited": 20,
+  "overallStatus": "Completed",
+  "totalCredit": 20,
+  "percent": 100,
+  "Deliverable": 5,
+  "Undeliverable": 1,
+  "Deliverable/AcceptAll": 8,
+  "UnDeliverable/AcceptAll": 6,
+  "Risky/AcceptAll": 0
+}

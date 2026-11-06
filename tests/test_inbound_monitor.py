@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from scripts.circuit_breaker import CircuitBreaker
-from scripts.mcp_mail_server import MCPMailServer
+from scripts.thunderbird_client import ThunderbirdClient
 from scripts.twenty_client import TwentyClient
 from scripts.inbound_monitor import (
     classify_inbound_message,
@@ -20,7 +20,7 @@ def test_process_inbound_batch_bounce_trips_breaker(tmp_path):
     state_path = str(tmp_path / "cb.json")
     cb = CircuitBreaker(state_file=state_path)
 
-    mock_mcp = MagicMock(spec=MCPMailServer)
+    mock_mcp = MagicMock(spec=ThunderbirdClient)
     mock_mcp.list_inbox_messages.return_value = [
         {"id": "101", "from": "MAILER-DAEMON@sales.contextelab.ma", "subject": "Delivery Failure", "folder": "INBOX"}
     ]
@@ -45,7 +45,7 @@ def test_process_inbound_batch_positive_creates_opportunity(tmp_path):
     state_path = str(tmp_path / "cb.json")
     cb = CircuitBreaker(state_file=state_path)
 
-    mock_mcp = MagicMock(spec=MCPMailServer)
+    mock_mcp = MagicMock(spec=ThunderbirdClient)
     mock_mcp.list_inbox_messages.return_value = [
         {"id": "202", "from": "ahmed@societe.ma", "subject": "Re: question sur societe", "folder": "INBOX"}
     ]
@@ -70,7 +70,7 @@ def test_process_inbound_batch_unsubscribe(tmp_path):
     state_path = str(tmp_path / "cb.json")
     cb = CircuitBreaker(state_file=state_path)
 
-    mock_mcp = MagicMock(spec=MCPMailServer)
+    mock_mcp = MagicMock(spec=ThunderbirdClient)
     mock_mcp.list_inbox_messages.return_value = [
         {"id": "303", "from": "client@societe.ma", "subject": "Stop emails", "folder": "INBOX"}
     ]
@@ -94,7 +94,7 @@ def test_process_inbound_batch_neutral(tmp_path):
     state_path = str(tmp_path / "cb.json")
     cb = CircuitBreaker(state_file=state_path)
 
-    mock_mcp = MagicMock(spec=MCPMailServer)
+    mock_mcp = MagicMock(spec=ThunderbirdClient)
     mock_mcp.list_inbox_messages.return_value = [
         {"id": "404", "from": "info@news.ma", "subject": "Newsletter hebdo", "folder": "INBOX"}
     ]
@@ -119,7 +119,7 @@ def test_process_inbound_batch_empty_folder(tmp_path):
     state_path = str(tmp_path / "cb.json")
     cb = CircuitBreaker(state_file=state_path)
 
-    mock_mcp = MagicMock(spec=MCPMailServer)
+    mock_mcp = MagicMock(spec=ThunderbirdClient)
     mock_mcp.list_inbox_messages.return_value = []
 
     mock_twenty = MagicMock(spec=TwentyClient)

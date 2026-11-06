@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 import requests
+from scripts.email_hygiene import is_personal_email
 from scripts.models import (
     CampaignStatusEnum,
     CompanyRecord,
@@ -24,16 +25,147 @@ class TwentyClient:
         base_url: str = "http://localhost:3005",
         api_key: Optional[str] = None,
     ):
+        import os
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("TWENTY_API_KEY")
         self.headers: Dict[str, str] = {
             "Content-Type": "application/json",
         }
-        if api_key:
-            self.headers["Authorization"] = f"Bearer {api_key}"
+        if self.api_key:
+            self.headers["Authorization"] = f"Bearer {self.api_key}"
 
         # In-memory deduplication cache for companies: normalized_name -> company_id
         self._company_cache: Dict[str, str] = {}
+        self.workflow_store = None
+
+    def workflow_request(self, method, path, *, payload=None, params=None):
+        """Strict adapter: errors never become a fake ID or an empty search."""
+        if method in ('POST','PATCH') and isinstance(payload,dict):
+            emails = payload.get('emails') or {}
+            if isinstance(emails,dict) and (is_personal_email(emails.get('primaryEmail'))
+                    or any(is_personal_email(e) for e in emails.get('additionalEmails',[]) or [])):
+                raise ValueError('PERSONAL_EMAIL_FORBIDDEN')
+        if not self.api_key:
+            raise RuntimeError('TWENTY_API_KEY_MISSING')
+        operation=None
+        if method=='GET' and self.workflow_store is not None:
+            from datetime import datetime, timezone
+            operation=self.workflow_store.operation(None,'CRM_READ',{'path':path,'params':params})
+            if operation['status']=='NEEDS_REVIEW':
+                raise RuntimeError('TWENTY_READ_RETRY_EXHAUSTED')
+            if operation['next_attempt_at'] and datetime.fromisoformat(operation['next_attempt_at'])>datetime.now(timezone.utc):
+                raise RuntimeError('TWENTY_READ_BACKOFF')
+        try:
+            response = requests.request(method,self.base_url + path,json=payload,params=params,
+                                        headers=self.headers,timeout=(5,30),allow_redirects=False)
+            if response.status_code == 404 and method == 'GET':
+                data=None
+            else:
+                response.raise_for_status()
+                data={} if response.status_code==204 else response.json()
+            if operation:
+                with self.workflow_store.connection() as c:
+                    c.execute("UPDATE workflow_operations SET status='SUCCEEDED',result=?,attempts=0,next_attempt_at=NULL WHERE id=?",(json.dumps(data),operation['id']))
+            return data
+        except (requests.RequestException,ValueError):
+            if operation:
+                from datetime import datetime, timezone, timedelta
+                attempts=operation['attempts']+1
+                with self.workflow_store.connection() as c:
+                    c.execute('UPDATE workflow_operations SET status=?,attempts=?,next_attempt_at=? WHERE id=?',
+                              ('NEEDS_REVIEW' if attempts>=3 else 'WAITING',attempts,
+                               (datetime.now(timezone.utc)+timedelta(seconds=60*2**(attempts-1))).isoformat(),operation['id']))
+            raise RuntimeError('TWENTY_REQUEST_FAILED') from None
+
+    def inspect_workflow_schema(self):
+        schema = self.workflow_request('GET','/rest/open-api/core')
+        if not isinstance(schema,dict) or not isinstance(schema.get('paths'),dict):
+            raise RuntimeError('TWENTY_SCHEMA_UNAVAILABLE')
+        return schema
+
+    def workflow_fields(self, resource, schema):
+        document = schema['paths'].get('/'+resource) or schema['paths'].get('/rest/'+resource)
+        if not document or 'post' not in document:
+            raise RuntimeError('TWENTY_RESOURCE_UNAVAILABLE')
+        node = document['post'].get('requestBody',{}).get('content',{}).get('application/json',{}).get('schema',{})
+        visited = set()
+        def fields(value):
+            if '$ref' in value:
+                ref = value['$ref']
+                if ref in visited or not ref.startswith('#/'):
+                    return set()
+                visited.add(ref)
+                resolved = schema
+                for part in ref[2:].split('/'):
+                    resolved = resolved.get(part,{})
+                return fields(resolved)
+            result = set(value.get('properties',{}))
+            for kind in ('allOf','oneOf','anyOf'):
+                for child in value.get(kind,[]):
+                    result.update(fields(child))
+            return result
+        result = fields(node)
+        if not result:
+            raise RuntimeError('TWENTY_FIELDS_UNAVAILABLE')
+        return result
+
+    def workflow_list(self, resource):
+        records, cursor, seen = [], None, set()
+        while True:
+            params = {'limit':60}
+            if cursor:
+                params['starting_after'] = cursor
+            result = self.workflow_request('GET','/rest/'+resource,params=params)
+            data = (result or {}).get('data',{})
+            rows = data.get(resource)
+            if not isinstance(rows,list):
+                raise RuntimeError('TWENTY_LIST_CONTRACT_MISMATCH')
+            records.extend(rows)
+            page = (result or {}).get('pageInfo') or data.get('pageInfo')
+            if page and not page.get('hasNextPage'):
+                return records
+            if not page and len(rows)<60:
+                return records
+            next_cursor = page.get('endCursor') if page else None
+            if not next_cursor or next_cursor in seen:
+                raise RuntimeError('TWENTY_PAGINATION_REQUIRES_REVIEW')
+            seen.add(next_cursor)
+            cursor = next_cursor
+
+    def workflow_get(self, resource, record_id):
+        result = self.workflow_request('GET','/rest/'+resource+'/'+record_id)
+        if result is None:
+            return None
+        data = result.get('data',{})
+        singular = {'people':'person','companies':'company','opportunities':'opportunity'}[resource]
+        row = data.get(singular) or data.get('find'+singular.capitalize()) or data
+        if not isinstance(row,dict) or row.get('id') != record_id:
+            raise RuntimeError('TWENTY_READBACK_MISMATCH')
+        return row
+
+    def workflow_create(self, resource, payload):
+        result = self.workflow_request('POST','/rest/'+resource,payload=payload)
+        singular = {'people':'person','companies':'company','opportunities':'opportunity'}[resource]
+        identity = self._extract_id(result,singular)
+        if not identity or identity.startswith('dummy-'):
+            raise RuntimeError('TWENTY_CREATE_UNCONFIRMED')
+        return identity
+
+    def workflow_patch(self, resource, identity, payload):
+        self.workflow_request('PATCH','/rest/'+resource+'/'+identity,payload=payload)
+
+    def workflow_delete(self, resource, identity):
+        self.workflow_request('DELETE','/rest/'+resource+'/'+identity)
+
+    def workflow_person_history(self, person_id):
+        try:
+            participants=self.workflow_list('messageParticipants')
+        except RuntimeError:
+            return None
+        # Unknown relation shapes cannot prove an absence of communications.
+        if any(not isinstance(row,dict) or 'personId' not in row for row in participants):
+            return None
+        return [row for row in participants if row.get('personId')==person_id]
 
     def _extract_id(self, data: Dict[str, Any], entity_name: str) -> str:
         """Extract entity ID from various Twenty REST API response shapes."""
@@ -158,8 +290,18 @@ class TwentyClient:
         if contact.source_file:
             payload["sourceFile"] = contact.source_file
 
+        if contact.linkedin_url:
+            payload["linkedinLink"] = {
+                "primaryLinkLabel": "LinkedIn",
+                "primaryLinkUrl": contact.linkedin_url,
+                "secondaryLinks": []
+            }
+
         endpoint = f"{self.base_url}/rest/people"
         res = requests.post(endpoint, json=payload, headers=self.headers)
+        if res.status_code >= 400:
+            import logging
+            logging.getLogger(__name__).error("Twenty API Error %s: %s for payload: %s", res.status_code, res.text, payload)
         res.raise_for_status()
         data = res.json() if res.content else {}
         return self._extract_id(data, "person")
@@ -328,7 +470,7 @@ class TwentyClient:
                 name=new_company_name,
                 domain_name=harvest_data.get("company_website"),
                 activity_sector=harvest_data.get("company_industry"),
-                source_file="apify_harvest",
+                source_file="harvest_direct",
             )
             new_comp_id = self.upsert_company(co_record)
 

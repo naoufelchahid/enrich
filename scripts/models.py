@@ -31,6 +31,8 @@ class NormalizedContact(BaseModel):
     company_name: str
     activity_sector: Optional[str] = None
     website: Optional[str] = None
+    company_domain: Optional[str] = None
+    company_domain_source: Optional[str] = None
     city: Optional[str] = None
     address: Optional[str] = None
     phone_standard: Optional[str] = None
@@ -42,6 +44,8 @@ class NormalizedContact(BaseModel):
     is_dirigeant: bool = False
     raw_email: Optional[str] = None
     email: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    recent_posts: Optional[str] = None
     email_validation_status: EmailValidationStatusEnum = EmailValidationStatusEnum.MISSING
     source_file: str
     enrichment_status: EnrichmentStatusEnum = EnrichmentStatusEnum.A_ENRICHIR_DONNEES_INCOMPLETES

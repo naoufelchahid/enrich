@@ -10,6 +10,7 @@ import datetime
 import json
 import logging
 import os
+import tempfile
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class CircuitBreaker:
         self.state_file = state_file
 
     def _read_state(self) -> Dict[str, Any]:
-        """Read state from disk. Returns default untripped state if missing or corrupted."""
+        """Read state from disk. Missing initial state is armed; corrupt or unreadable state blocks sending."""
         default_state: Dict[str, Any] = {
             "tripped": False,
             "reason": None,
@@ -40,18 +41,23 @@ class CircuitBreaker:
         try:
             with open(self.state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if isinstance(data, dict):
+                if isinstance(data, dict) and type(data.get('tripped')) is bool:
                     return data
-                return default_state
+                return {**default_state, 'tripped': True, 'reason': 'INVALID_BREAKER_STATE'}
         except Exception as e:
             logger.warning("Could not read circuit breaker state file %s: %s", self.state_file, e)
-            return default_state
+            return {**default_state, 'tripped': True, 'reason': 'UNREADABLE_BREAKER_STATE'}
 
     def _write_state(self, state: Dict[str, Any]) -> None:
         """Persist state to disk safely."""
         os.makedirs(os.path.dirname(os.path.abspath(self.state_file)), exist_ok=True)
-        with open(self.state_file, "w", encoding="utf-8") as f:
+        parent = os.path.dirname(os.path.abspath(self.state_file))
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=parent, delete=False) as f:
+            temporary = f.name
             json.dump(state, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, self.state_file)
 
     def is_tripped(self) -> bool:
         """Check if circuit breaker is currently tripped."""

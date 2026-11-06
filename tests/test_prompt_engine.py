@@ -1,138 +1,43 @@
-# tests/test_prompt_engine.py
+"""The initial copy is frozen V2/V5; the free writer handles replies only."""
 import pytest
-from scripts.prompt_engine import (
-    validate_email_copy,
-    build_cognitive_prompt,
-    compose_tailored_email,
-)
-
-def test_validate_email_copy_rules():
-    # Valid email: 50-85 words, 0 HTML, 2-4 words subject, 1 CTA
-    valid_subject = "question sur Atlas Tech"  # 4 words
-    valid_body = (
-        "Bonjour Karim,\n\n"
-        "J'ai remarqué le développement récent d'Atlas Tech sur le marché marocain. "
-        "À Contexte Lab à Casablanca, nous accompagnons les dirigeants dans l'optimisation "
-        "de leurs processus opérationnels grâce à l'intelligence artificielle appliquée.\n\n"
-        "Seriez-vous ouvert à un échange informel de 5 minutes cette semaine pour explorer "
-        "si ces approches sont pertinentes pour vos équipes ?\n\n"
-        "Bien à vous,\nNaoufel Chahid"
-    )
-    is_valid, errors = validate_email_copy(valid_subject, valid_body)
-    assert is_valid is True
-    assert len(errors) == 0
-
-def test_validate_email_copy_rejects_html_and_bad_word_count():
-    # Invalid: Contains HTML and subject too long
-    bad_subject = "Proposition commerciale exclusive et urgente pour votre société"  # 8 words
-    bad_body = "<p>Bonjour,</p><p>Cliquez <a href='https://spam.com'>ici</a>.</p>"
-    is_valid, errors = validate_email_copy(bad_subject, bad_body)
-    assert is_valid is False
-    assert any("HTML" in e for e in errors)
-    assert any("Subject" in e for e in errors)
-    assert any("Word count" in e for e in errors)
-
-def test_build_cognitive_prompt_contains_market_context():
-    lead = {
-        "first_name": "Taha",
-        "last_name": "Lahlou",
-        "company_name": "LogiMaroc",
-        "job_title": "Directeur Général",
-    }
-    career_data = {
-        "current_job_start_date": "2026-02-01",
-        "past_companies": ["Bolloré Maroc"],
-    }
-    prompt = build_cognitive_prompt(lead, career_data)
-    assert "LogiMaroc" in prompt
-    assert "Taha" in prompt
-    assert "50 à 85 mots" in prompt
-    assert "Zero HTML" in prompt
-    assert "Contexte Lab" in prompt
-
-def test_compose_tailored_email_output():
-    lead = {
-        "first_name": "Youssef",
-        "last_name": "Mansouri",
-        "company_name": "Fintech Horizons",
-        "job_title": "Fondateur",
-    }
-    msg = compose_tailored_email(lead)
-    assert "subject" in msg
-    assert "body" in msg
-    is_valid, errors = validate_email_copy(msg["subject"], msg["body"])
-    assert is_valid, f"Generated email failed validation: {errors}"
+from scripts.prompt_engine import draft_workflow_email, validate_email_copy, workflow_writing_instructions
+from scripts.email_patterns import formal_salutation, PILOT_PATTERNS
 
 
-def test_validate_email_copy_boundary_cases():
-    # 1 word subject
-    is_valid, errors = validate_email_copy("Question", "word " * 60)
-    assert not is_valid
-    assert any("Subject" in e for e in errors)
-
-    # 5 words subject
-    is_valid, errors = validate_email_copy("Une question pour votre entreprise maintenant", "word " * 60)
-    assert not is_valid
-    assert any("Subject" in e for e in errors)
-
-    # Body too short (49 words)
-    is_valid, errors = validate_email_copy("Question sur entreprise", "mot " * 49)
-    assert not is_valid
-    assert any("Word count" in e for e in errors)
-
-    # Body too long (86 words)
-    is_valid, errors = validate_email_copy("Question sur entreprise", "mot " * 86)
-    assert not is_valid
-    assert any("Word count" in e for e in errors)
+def test_initial_cannot_use_the_free_reply_writer(tmp_path):
+    with pytest.raises(ValueError,match='INITIAL_REQUIRES_REVIEWED_V2_V5'):
+        draft_workflow_email({'last_name':'Tazi','civility':'Mme'},runner=lambda *a,**kw:pytest.fail('no worker'),output_dir=tmp_path)
+    assert set(PILOT_PATTERNS)=={'V2','V5'}
 
 
-def test_build_cognitive_prompt_defaults():
-    # When lead dictionary is empty and career_data is None
-    prompt = build_cognitive_prompt({})
-    assert "Bonjour" in prompt
-    assert "votre société" in prompt
-    assert "Dirigeant" in prompt
-    assert "50 à 85 mots" in prompt
+@pytest.mark.parametrize('subject,body',[('Re: précision','Merci.'),('Re: une question qui nécessite un objet plus long','mot '*120)])
+def test_reply_has_no_retired_editorial_word_limits(subject,body):
+    assert validate_email_copy(subject,body)==(True,[])
 
 
-def test_compose_tailored_email_defaults():
-    # When lead dictionary is empty
-    msg = compose_tailored_email({})
-    assert "subject" in msg
-    assert "body" in msg
-    is_valid, errors = validate_email_copy(msg["subject"], msg["body"])
-    assert is_valid, f"Default generated email failed validation: {errors}"
+@pytest.mark.parametrize('subject,body',[('Re: test','<p>Texte</p>'),('objet\ninjecté','Texte'),('','Texte'),('Objet','')])
+def test_reply_format_rejects_html_empty_content_and_header_injection(subject,body):
+    assert not validate_email_copy(subject,body)[0]
 
 
-def test_compose_tailored_email_long_company_name():
-    lead = {
-        "first_name": "Mohamed",
-        "last_name": "Benjelloun",
-        "company_name": "Banque Centrale Populaire du Maroc",
-        "job_title": "Directeur Général",
-    }
-    msg = compose_tailored_email(lead)
-    assert "subject" in msg
-    assert "body" in msg
-    subject_words = msg["subject"].strip().split()
-    assert 2 <= len(subject_words) <= 4, f"Subject words count invalid: {subject_words}"
-    is_valid, errors = validate_email_copy(msg["subject"], msg["body"])
-    assert is_valid, f"Generated email for long company failed validation: {errors}"
+def test_reply_writer_requires_formal_salutation(tmp_path):
+    with pytest.raises(ValueError,match='FORMAL_SALUTATION_REQUIRED'):
+        draft_workflow_email({'last_name':'Tazi','civility':'Mme'},reply={'subject':'Précision'},
+            runner=lambda *a,**kw:{'subject':'Re: Précision','body':'Bonjour Alice,\nMerci.'},output_dir=tmp_path)
 
 
-def test_validate_email_copy_rejects_html_in_subject():
-    bad_subject = "<b>question</b> sur Atlas"  # 3 words, but has HTML tags
-    valid_body = (
-        "Bonjour Karim,\n\n"
-        "J'ai remarqué le développement récent d'Atlas Tech sur le marché marocain. "
-        "À Contexte Lab à Casablanca, nous accompagnons les dirigeants dans l'optimisation "
-        "de leurs processus opérationnels grâce à l'intelligence artificielle appliquée.\n\n"
-        "Seriez-vous ouvert à un échange informel de 5 minutes cette semaine pour explorer "
-        "si ces approches sont pertinentes pour vos équipes ?\n\n"
-        "Bien à vous,\nNaoufel Chahid"
-    )
-    is_valid, errors = validate_email_copy(bad_subject, valid_body)
-    assert is_valid is False
-    assert any("HTML" in e for e in errors)
+def test_reply_writer_uses_skills_and_preserves_operator_input(tmp_path):
+    def runner(instructions,data,schema,**kwargs):
+        assert 'Cold Email Writing' in instructions and 'Marketing Psychology' in instructions
+        assert 'five' not in instructions.lower().split('project decisions override general writing advice.')[1]
+        assert data['operator_directive']=='Préciser le format'
+        return {'subject':'Re: Précision','body':data['required_salutation']+'\n\nMerci pour votre retour.'}
+    result=draft_workflow_email({'last_name':'Tazi','civility':'Mme'},reply={'subject':'Précision'},
+        directive='Préciser le format',runner=runner,output_dir=tmp_path)
+    assert result['body'].startswith('Bonjour Madame Tazi,')
 
 
+def test_formal_salutation_uses_a_confirmed_identity():
+    assert formal_salutation(last_name='Tazi',civility='Mme')=='Bonjour Madame Tazi,'
+    with pytest.raises(ValueError,match='CIVILITY_REVIEW_REQUIRED'):
+        formal_salutation(last_name='Tazi')
