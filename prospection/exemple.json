@@ -1,0 +1,22 @@
+{
+  "identifiant": "pilote-achats",
+  "cible": "Responsables achats au Maroc",
+  "fonctions": ["responsable achats"],
+  "pays": ["MA"],
+  "volume": 20,
+  "fuseau": "Africa/Casablanca",
+  "jours_actifs": ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"],
+  "heure_debut": "08:00",
+  "heure_fin": "17:00",
+  "intervalle_minutes": 10,
+  "contacts_par_creneau": 4,
+  "brief": {
+    "offre": "Présentation d’un catalogue fournisseurs",
+    "public": "Responsables achats",
+    "raison": "Comprendre les critères de sélection",
+    "langue": "français",
+    "ton": "direct",
+    "signature": "Équipe pilote",
+    "question": "Comment évaluez-vous vos fournisseurs ?"
+  }
+}
