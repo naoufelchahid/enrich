@@ -21,19 +21,25 @@ Si la preuve est unique, retourne correspond et les pointeurs JSON RFC 6901 exac
 En cas d'ambiguïté, retourne indetermine. Aucune adresse inventée."""
 
 
-def consulter(profil):
+def tour(donnees, prompt, format_sortie, modele=None):
     with tempfile.TemporaryDirectory() as dossier:
         schema = Path(dossier, "schema.json")
         sortie = Path(dossier, "decision.json")
-        schema.write_text(json.dumps(SCHEMA))
+        schema.write_text(json.dumps(format_sortie))
         commande = ["codex", "exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check",
                     "--sandbox", "read-only", "-c", 'web_search="disabled"', "--output-schema",
                     str(schema), "-o", str(sortie), "-"]
+        if modele:
+            commande[2:2] = ["-m", modele]
         resultat = subprocess.run(commande, cwd=dossier, text=True, capture_output=True, timeout=240,
-                                  input=PROMPT + "\n" + json.dumps(profil, ensure_ascii=False))
+                                  input=prompt + "\n" + json.dumps(donnees, ensure_ascii=False))
         if resultat.returncode:
             raise RuntimeError(f"Qualification Codex interrompue (code {resultat.returncode})")
         return json.loads(sortie.read_text())
+
+
+def consulter(profil):
+    return tour(profil, PROMPT, SCHEMA)
 
 
 def qualifier_codex(profil):
