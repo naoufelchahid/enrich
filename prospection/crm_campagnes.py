@@ -90,38 +90,49 @@ class Twenty:
     def admettre(self, reference, dossiers):
         if not dossiers:
             return []
-        personnes, adresses = defaultdict(list), defaultdict(set)
+        personnes, adresses, fiches = defaultdict(list), defaultdict(set), {}
         for p in self.lignes("people", fields="id,linkedinLink,emails,companyId,prospectingIdentity"):
             url = url_personnelle((p.get("linkedinLink") or {}).get("primaryLinkUrl"))
-            personnes[url].append(p)
+            if url:
+                personnes[url].append(p)
+            fiches[p["id"]] = p
             emails = p.get("emails") or {}
             for adresse in [emails.get("primaryEmail"), *(emails.get("additionalEmails") or [])]:
                 if adresse:
                     adresses[adresse.casefold()].add(p["id"])
         charges, retenus = [], {}
+        adresses_lot = set()
         for d in dossiers:
             url, adresse = d["linkedin"], d["adresse_admise"]
             crm_id = d["entreprise"]["twenty_id"]
-            p = personnes[url]
-            if len(p) > 1 or (p and p[0].get("companyId") not in (None, crm_id)):
+            if adresse in adresses_lot:
+                raise ValueError("Adresse de contact en double")
+            adresses_lot.add(adresse)
+            ids = set(adresses[adresse])
+            if url:
+                ids.update(p["id"] for p in personnes[url])
+            precedent = fiches[next(iter(ids))] if len(ids) == 1 else {}
+            if len(ids) > 1 or (precedent and precedent.get("companyId") not in (None, crm_id)):
                 raise ValueError("Identité de contact ambiguë dans Twenty")
-            precedent = p[0] if p else {}
-            if url in retenus or adresses[adresse] - {precedent.get("id")}:
+            identite = precedent.get("prospectingIdentity") or url or "email:" + adresse
+            if identite in retenus or adresses[adresse] - {precedent.get("id")}:
                 raise ValueError("Identité ou adresse de contact en double")
             if d["decision_finale"]["verdict"] != "admis" or not crm_id:
                 raise ValueError("Dossier non admis")
-            retenus[url] = d
-            adresses[adresse].add(url)
+            retenus[identite] = d
             emails = precedent.get("emails") or {}
             autres = [e for e in [emails.get("primaryEmail"), *(emails.get("additionalEmails") or [])]
                       if e and e.casefold() != adresse]
-            charge = {"name": {"firstName": d["prenom"], "lastName": d["nom"]},
+            nom = d.get("nom") or (d["entreprise"].get("nom", "") if not url else "")
+            charge = {"name": {"firstName": d.get("prenom", ""), "lastName": nom},
                       "companyId": crm_id, "jobTitle": d["poste"]["titre"],
-                      "linkedinLink": {"primaryLinkUrl": url}, "prospectingIdentity": url,
+                      "prospectingIdentity": identite,
                       "emails": {"primaryEmail": adresse, "additionalEmails": list(dict.fromkeys(autres))},
                       "prospectingDossier": json.dumps(d, ensure_ascii=False)}
+            if url:
+                charge["linkedinLink"] = {"primaryLinkUrl": url}
             if precedent and not precedent.get("prospectingIdentity"):
-                self.modifier("people", precedent["id"], prospectingIdentity=url)
+                self.modifier("people", precedent["id"], prospectingIdentity=identite)
             charges.append(charge)
         ids = {p["prospectingIdentity"]: p["id"] for p in self.lots("people", charges, upsert=True)}
         if set(ids) != set(retenus):

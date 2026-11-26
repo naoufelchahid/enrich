@@ -61,7 +61,7 @@ def premier(objet, *champs):
 
 
 def postes(ligne, fournisseur):
-    if fournisseur == "PipelineLabs":
+    if fournisseur.startswith("PipelineLabs"):
         if ligne.get("isCurrent") is False or ligne.get("is_current") is False:
             return []
         organisation = ligne.get("organization") or ligne.get("company")

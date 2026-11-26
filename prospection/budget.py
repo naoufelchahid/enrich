@@ -2,6 +2,7 @@
 import json
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 
 PLAFOND = Decimal("3")
@@ -51,18 +52,7 @@ class Budget:
         if maximum == 0:
             raise ValueError("Le plafond par lot doit être positif")
         cle = sha256(json.dumps([acteur, entree, str(maximum), max_items], sort_keys=True).encode()).hexdigest()
-        self.db.execute("BEGIN IMMEDIATE")
-        with self.db:
-            precedent = self.db.execute("SELECT run FROM budget_runs WHERE cle=?", (cle,)).fetchone()
-            if precedent and not precedent[0]:
-                raise RuntimeError("Lancement incertain, réservation conservée")
-            if not precedent:
-                # Le total remonté par Apify peut évoluer après la fin d’un run.
-                # Les plafonds accordés restent donc imputés sur l’enveloppe du pilote.
-                total = sum(montant(reserve) for reserve, in self.db.execute("SELECT reserve FROM budget_runs"))
-                if total + maximum + verification > self.plafond:
-                    raise BudgetInsuffisant(f"Solde insuffisant pour {acteur}")
-                self.db.execute("INSERT INTO budget_runs VALUES (?,?,?,NULL,NULL)", (cle, acteur, str(maximum)))
+        precedent = self.reserver(cle, acteur, maximum, verification)
         if precedent:
             run = self.apify.appeler("actor-runs/" + precedent[0])["data"]
         else:
@@ -84,7 +74,12 @@ class Budget:
             else:
                 self.annuler(cle)
                 raise BudgetInsuffisant(f"Facturation sans plafond vérifiable pour {acteur}")
-            run = self.apify.appeler(f"acts/{acteur}/runs?{urlencode(params)}", entree)["data"]
+            try:
+                run = self.apify.appeler(f"acts/{acteur}/runs?{urlencode(params)}", entree)["data"]
+            except HTTPError as erreur:
+                if erreur.code in {400, 401, 403, 404, 422}:
+                    self.annuler(cle)
+                raise
             with self.db:
                 self.db.execute("UPDATE budget_runs SET run=? WHERE cle=?", (run["id"], cle))
         run = self.apify.attendre(run)
@@ -100,6 +95,23 @@ class Budget:
         dataset = run["defaultDatasetId"]
         return list(self.apify.dataset(dataset)), {"run": run["id"], "dataset": dataset,
                                                    "date": run.get("finishedAt")}
+
+    def solde(self):
+        total = sum(montant(reserve) for reserve, in self.db.execute("SELECT reserve FROM budget_runs"))
+        return self.plafond - total
+
+    def reserver(self, cle, acteur, maximum, verification=0):
+        maximum, verification = montant(maximum), montant(verification)
+        self.db.execute("BEGIN IMMEDIATE")
+        with self.db:
+            precedent = self.db.execute("SELECT run FROM budget_runs WHERE cle=?", (cle,)).fetchone()
+            if precedent:
+                if not precedent[0]:
+                    raise RuntimeError("Lancement incertain, réservation conservée")
+                return precedent
+            if maximum + verification > self.solde():
+                raise BudgetInsuffisant(f"Solde insuffisant pour {acteur}")
+            self.db.execute("INSERT INTO budget_runs VALUES (?,?,?,NULL,NULL)", (cle, acteur, str(maximum)))
 
     def annuler(self, cle):
         with self.db:

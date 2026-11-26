@@ -4,6 +4,7 @@
   "graine": 21300,
   "campagne": "pilote-kerix-21300",
   "plafond_usd": "3.00",
+  "criteres_elargis": true,
   "recours": {
     "harvest_profils": true,
     "harvest_effectifs": true,

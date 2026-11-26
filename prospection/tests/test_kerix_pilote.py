@@ -317,3 +317,63 @@ def test_recherche_adresse_du_profil_identifie_par_harvest_effectifs():
     admis, = resultat["admis"]
     assert admis["adresse_admise"] == "lea@a.example"
     assert admis["recherches_precedentes"][0]["fournisseur"] == "Harvest effectifs"
+
+
+def test_cascade_elargie_retient_poste_libre_et_bloque_une_adresse_a_risque(monkeypatch):
+    from decimal import Decimal
+    from prospection import acquisition_elargie as module
+    from prospection.envoi_campagne import adresse_admise
+    a = fiche("a", "000000000000001", site="https://a.example")
+    b = fiche("b", "000000000000002")
+    c = fiche("c", "000000000000003", site="https://c.example")
+    fiches = {x["kerix"]: x for x in (a, b, c)}
+    appels = []
+
+    class ActeursElargis(Acteurs):
+        def solde(self):
+            return Decimal("3")
+
+    def jeux(acteur, entree):
+        appels.append((acteur, entree))
+        if acteur == module.SERP:
+            return [{"serp": True}]
+        if acteur == PIPELINE and "companyDomainIncludes" in entree:
+            assert "personTitleIncludes" not in entree
+            return [
+                {"firstName": "Camille", "title": "Comptable", "companyName": "a",
+                 "companyDomain": "a.example", "email": "camille@a.example"},
+                {"firstName": "Dani", "title": "Assistante", "companyName": "autre",
+                 "companyDomain": "c.example", "email": "dani@c.example"},
+            ]
+        if acteur == PIPELINE:
+            return []
+        if acteur == BOUNCE:
+            return [{"email": a, "status": "timeout"} if a.endswith("@c.example") else bounce_ok(a)
+                    for a in entree["emails"]]
+        if acteur == ZAIQ:
+            return [{"email": a, "status": "deliverable", "safeToSend": True, "isCatchAll": True}
+                    for a in entree["emails"]]
+        return []
+
+    original = module.noeuds_elargis
+    monkeypatch.setattr(module, "noeuds_elargis", lambda *args, **kwargs: original(
+        *args, **kwargs, resoudre_serp=lambda e, l: {b["ice"]: {
+            "site": "https://b.example", "linkedin": "", "preuve_identite": {
+                "url": "https://b.example", "extrait": "Entreprise B"}}},
+        lire_site=lambda e: [{"email": "contact@b.example", "url": e["site"], "extrait": "contact@b.example"}]
+        if e["ice"] == b["ice"] else [],
+    ))
+    crm = Twenty(API())
+    graphe = graphe_acquisition(Kerix(), crm, ActeursElargis(jeux), elargi=True, fiche=fiches.__getitem__)
+    bilan = graphe.invoke({"source": list(fiches), "rubrique": "21300", "taille": 3, "graine": 4, "campagne": "A"})
+    assert {d["adresse_admise"] for d in bilan["admis"]} == {"camille@a.example", "contact@b.example"}
+    assert len(bilan["candidats"]) == 3
+    assert any(acteur == BOUNCE for acteur, _ in appels)
+    assert [entree["emails"] for acteur, entree in appels if acteur == ZAIQ] == [["dani@c.example"]]
+    for d in bilan["admis"]:
+        assert not d["linkedin"]
+        p = crm.record("people", d["twenty_id"])
+        assert adresse_admise(p) == d["adresse_admise"]
+        dossier = json.loads(p["prospectingDossier"])
+        dossier["verifications"][-1]["brut"]["is_catch_all"] = True
+        assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None

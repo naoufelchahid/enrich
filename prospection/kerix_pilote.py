@@ -87,6 +87,7 @@ def _acquerir(args, crm):
     with sqlite3.connect(repertoire / "budget.sqlite") as db:
         budget = Budget(db, Apify(os.environ["APIFY_TOKEN"]), configuration["plafond_usd"])
         graphe = graphe_acquisition(kerix, crm, budget, fiche=fiches.__getitem__,
+                                    elargi=configuration.get("criteres_elargis", True),
                                     **configuration.get("recours", {}))
         resultat = graphe.invoke(etat)
     archive(chemin_bilan, resultat)

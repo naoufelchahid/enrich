@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .crm_campagnes import AFFECTATIONS, EXPEDITIONS, charger_json
 from .graphe import PATTERN, empreinte, simuler
+from .qualification_kerix import BOUNCE, ZAIQ, normaliser_verdict
 from .transport import envoyer
 
 
@@ -22,7 +23,7 @@ class Etat(TypedDict, total=False):
     resultat: dict
 
 
-def adresse_admise(personne):
+def adresse_admise(personne, *, preuve_apify_exigee=False):
     dossier = charger_json(personne.get("prospectingDossier")) or {}
     adresse = dossier.get("adresse_admise")
     verifications = dossier.get("verifications") or []
@@ -34,6 +35,11 @@ def adresse_admise(personne):
             or personne.get("companyId") != dossier.get("entreprise", {}).get("twenty_id")
             or personne.get("prospectingUnsubscribed") is True):
         return None
+    if preuve_apify_exigee or dossier.get("mode_verification") == "apify":
+        preuve = verifications[-1]
+        fournisseur = preuve.get("fournisseur")
+        if fournisseur not in {BOUNCE, ZAIQ} or normaliser_verdict(fournisseur, preuve.get("brut")) != "accepte":
+            return None
     return adresse
 
 
@@ -58,9 +64,12 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
                 continue
             dossier = charger_json(personne["prospectingDossier"])
             pattern = briefing.get("structure", PATTERN)
+            if dossier.get("nom_confirme") is False:
+                pattern += ("\nUtilise une salutation neutre, par exemple Bonjour. "
+                            "Adresse-toi à l’entreprise sans citer de nom ni de poste individuel.")
             resultat = ecrire({"profil": dossier, "brief": briefing, "pattern": pattern,
                                "twenty_id": contact, "campagne": etat["campagne"],
-                               "identite": dossier["linkedin"], "qualification": dossier["decision_initiale"],
+                               "identite": dossier.get("linkedin") or adresse, "qualification": dossier["decision_initiale"],
                                "verification": dossier["verifications"][-1]})
             charge = {"campagne": etat["campagne"], "affectation": identifiant, "contact": contact,
                       "adresse": adresse, "version": resultat["version"], "revue": resultat["revue"],
@@ -80,7 +89,7 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
             if erreur.code == 404:
                 return None
             raise
-        adresse = adresse_admise(personne)
+        adresse = adresse_admise(personne, preuve_apify_exigee=not etat.get("boite_test"))
         if (not adresse or adresse != approuve["adresse"] or affectation["contactId"] != approuve["contact"]
                 or empreinte(charger_json(personne["prospectingDossier"])) != approuve["dossier"]
                 or (charger_json(affectation.get("draftJson")) or {}).get("empreinte") != approuve["empreinte"]):

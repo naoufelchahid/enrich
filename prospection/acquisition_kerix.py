@@ -44,11 +44,12 @@ class Etat(TypedDict, total=False):
     admis: list
     controles: dict
     bilan: dict
+    serp: dict
     plafond_atteint: bool
 
 
 def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=True,
-                      harvest_effectifs=True, zaiq=True, fiche=None):
+                      harvest_effectifs=True, zaiq=True, fiche=None, elargi=False):
     def selection(etat):
         source = sorted(set(etat.get("source") or kerix.source(etat["rubrique"])))
         return {"source": source, "tirage": tirer(source, etat["taille"], etat["graine"]),
@@ -209,10 +210,23 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
              "motif": "Identité insuffisante pour la recherche payante" if not
              (domaine(e["site"]) or page_entreprise(e["linkedin"])) else "Aucun contact admissible"}
             for e in restantes(etat)]
+        mesures = {}
+        if elargi:
+            controles = [vv[-1] for vv in etat["controles"].values() if vv]
+            mesures = {
+                "serp": etat.get("serp"),
+                "dossiers_candidats": len(etat["candidats"]),
+                "entreprises_avec_candidats": len({c["entreprise"]["ice"] for c in etat["candidats"]}),
+                "adresses_candidates": len({a for c in etat["candidats"] for a in c["adresses_recevables"]}),
+                "adresses_soumises": sum(any(v.get("provenance") for v in vv) for vv in etat["controles"].values()),
+                "verdicts_verification": {v: sum(x["verdict"] == v for x in controles)
+                                          for v in sorted({x["verdict"] for x in controles})},
+            }
         return {"attentes": attentes, "bilan": {
             "rubrique": etat["rubrique"], "graine": etat["graine"], "campagne": etat["campagne"],
             "fiches_tirees": len(etat["tirage"]), "exclusions": len(etat["exclusions"]),
             "entreprises_importees": len(etat["entreprises"]), "contacts_admis": len(etat["admis"]),
+            **mesures,
             "entreprises_couvertes": len(couvertes), "couverture": len(couvertes) / len(etat["tirage"]),
             "plafond_atteint": etat.get("plafond_atteint", False), "couts_usd": couts, "total_usd": str(depense), "engage_usd": str(engage),
             "cout_par_entreprise_usd": str(depense / len(couvertes)) if couvertes and not engage else None,
@@ -220,12 +234,18 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
 
     g = StateGraph(Etat)
     noeuds = [("tirage_kerix", selection), ("import_twenty", importer)]
-    noeuds.extend((role, lambda etat, role=role: pipeline(etat, role)) for role in TITRES)
-    noeuds.extend([
-        ("harvest_profils", profils), ("harvest_effectifs", effectifs),
-        ("profils_identifies_par_harvest", lambda etat: profils(etat, apres_effectifs=True)),
-        ("bilan_acquisition", bilan),
-    ])
+    if elargi:
+        from .acquisition_elargie import noeuds_elargis
+        noeuds.extend(noeuds_elargis(crm, budget, harvest_profils=harvest_profils,
+                                     harvest_effectifs=harvest_effectifs, zaiq=zaiq,
+                                     acteurs=(PIPELINE, PROFILS, EFFECTIFS)))
+    else:
+        noeuds.extend((role, lambda etat, role=role: pipeline(etat, role)) for role in TITRES)
+        noeuds.extend([
+            ("harvest_profils", profils), ("harvest_effectifs", effectifs),
+            ("profils_identifies_par_harvest", lambda etat: profils(etat, apres_effectifs=True)),
+        ])
+    noeuds.append(("bilan_acquisition", bilan))
     precedent = START
     for nom, operation in noeuds:
         g.add_node(nom, operation)
