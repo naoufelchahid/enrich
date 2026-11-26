@@ -289,3 +289,28 @@ def test_verdicts_zaiq_et_timeout_explicite():
     assert normaliser_verdict(BOUNCE, {"status": "unknown", "reason": "SMTP timeout"}) == "timeout"
     assert normaliser_verdict(BOUNCE, {"status": "timeout", "is_catch_all": True}) == "rejete"
     assert normaliser_verdict(BOUNCE, None) == "manquant"
+
+
+def test_recherche_adresse_du_profil_identifie_par_harvest_effectifs():
+    e = fiche("a", "000000000000001", site="https://a.example",
+              linkedin="https://www.linkedin.com/company/a")
+    dirigeante = harvest(candidat("lea", e, "lea@groupe.example", "Founder, CEO"))
+
+    def jeux(acteur, entree):
+        if acteur == PIPELINE:
+            return []
+        if acteur == EFFECTIFS:
+            return [dirigeante]
+        if acteur == PROFILS:
+            assert entree["urls"] == [dirigeante["linkedinUrl"]]
+            return [{**dirigeante, "email": "lea@a.example"}]
+        assert acteur == BOUNCE and entree["emails"] == ["lea@a.example"]
+        return [bounce_ok("lea@a.example")]
+
+    acteurs = Acteurs(jeux)
+    resultat = graphe_acquisition(Kerix(), Twenty(API()), acteurs, juger, fiche=lambda url: e).invoke({
+        "source": [e["kerix"]], "rubrique": "21300", "taille": 1, "graine": 0, "campagne": "A",
+    })
+    admis, = resultat["admis"]
+    assert admis["adresse_admise"] == "lea@a.example"
+    assert admis["recherches_precedentes"][0]["fournisseur"] == "Harvest effectifs"
