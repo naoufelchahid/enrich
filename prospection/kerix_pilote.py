@@ -86,9 +86,11 @@ def _acquerir(args, crm):
         fiches = confirmer_identites(fiches, lire(args.identites))
     with sqlite3.connect(repertoire / "budget.sqlite") as db:
         budget = Budget(db, Apify(os.environ["APIFY_TOKEN"]), configuration["plafond_usd"])
+        recours = dict(configuration.get("recours", {}))
+        recours.pop("zaiq", None)  # Lecture des configurations archivées.
         graphe = graphe_acquisition(kerix, crm, budget, fiche=fiches.__getitem__,
                                     elargi=configuration.get("criteres_elargis", True),
-                                    **configuration.get("recours", {}))
+                                    **recours)
         resultat = graphe.invoke(etat)
     archive(chemin_bilan, resultat)
     return resultat["bilan"]

@@ -1,9 +1,5 @@
-"""Décisions structurées d’admission et rapprochement des verdicts par adresse."""
+"""Qualification Codex et relecture des preuves SMTP historiques."""
 import re
-from datetime import datetime, timezone
-from urllib.error import URLError
-
-from .budget import BudgetInsuffisant
 from .codex_serveur import decision
 from .recherche_dirigeants import TITRES, domaine
 
@@ -54,6 +50,7 @@ def qualifier(dossier, etape):
 
 
 def normaliser_verdict(acteur, brut, *, boite_officielle=False):
+    """Interpréter une preuve SMTP déjà enregistrée dans Twenty."""
     if brut is None:
         return "manquant"
     statut = str(brut.get("status") or brut.get("verdict") or "").casefold()
@@ -81,32 +78,3 @@ def normaliser_verdict(acteur, brut, *, boite_officielle=False):
             and all(brut.get(k) is False for k in risques_zaiq)):
         return "accepte"
     return "inconnu"
-
-
-def controle(budget, acteur, lot, plafond, *, reserve=0, officielles=()):
-    instant = datetime.now(timezone.utc).isoformat()
-    recus, provenance = {}, None
-    entree = {"emails": lot}
-    if acteur == BOUNCE:
-        entree.update(concurrency=10, timeoutSecs=120, skipInvalidSyntax=True)
-    try:
-        lignes, provenance = budget.lignes(acteur, entree, plafond, verification=reserve, max_items=len(lot))
-    except BudgetInsuffisant:
-        etat = "plafond"
-    except (URLError, TimeoutError, RuntimeError):
-        etat = "echec_lot"
-    else:
-        etat = None
-        for ligne in lignes:
-            adresse = str(ligne.get("email") or "").strip().casefold()
-            if adresse in lot:
-                recus.setdefault(adresse, []).append(ligne)
-    resultats = {}
-    for adresse in lot:
-        lignes = recus.get(adresse, [])
-        brut = lignes[0] if len(lignes) == 1 else lignes or None
-        verdict = etat or ("reponse_ambigue" if len(lignes) > 1 else normaliser_verdict(acteur, brut, boite_officielle=adresse in officielles))
-        resultats[adresse] = {"fournisseur": acteur, "date": ((brut.get("checkedAt") or brut.get("verified_at")) if isinstance(brut, dict) else None)
-                              or (provenance or {}).get("date") or instant,
-                              "adresse": adresse, "provenance": provenance, "verdict": verdict, "brut": brut}
-    return resultats

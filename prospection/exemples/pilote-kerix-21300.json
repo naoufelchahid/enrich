@@ -7,7 +7,6 @@
   "criteres_elargis": true,
   "recours": {
     "harvest_profils": true,
-    "harvest_effectifs": true,
-    "zaiq": true
+    "harvest_effectifs": true
   }
 }

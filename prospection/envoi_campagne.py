@@ -35,6 +35,7 @@ def adresse_admise(personne, *, preuve_apify_exigee=False):
             or personne.get("companyId") != dossier.get("entreprise", {}).get("twenty_id")
             or personne.get("prospectingUnsubscribed") is True):
         return None
+    # Les contrôles DNS seuls ne remplacent pas une preuve SMTP déjà enregistrée.
     if preuve_apify_exigee or dossier.get("mode_verification") == "apify":
         preuve = verifications[-1]
         fournisseur = preuve.get("fournisseur")

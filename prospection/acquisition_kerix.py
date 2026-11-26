@@ -9,8 +9,9 @@ from langgraph.graph import END, START, StateGraph
 
 from .budget import BudgetInsuffisant, montant
 from .kerix import tirer
-from .qualification_kerix import BOUNCE, ZAIQ, adresse_recevable, controle, qualifier
-from .recherche_dirigeants import PRIORITES, TITRES, candidats, domaine, page_entreprise
+from .qualification_kerix import adresse_recevable, qualifier
+from .verification_dns import controler_dns, plafond_lot
+from .recherche_dirigeants import TITRES, candidats, domaine, page_entreprise
 
 PIPELINE = "pipelinelabs~lead-scraper-apollo-zoominfo-lusha-ppe"
 PROFILS = "harvestapi~linkedin-profile-scraper"
@@ -20,8 +21,6 @@ TARIFS = {
     PIPELINE: ("0.001", "0.002"),
     PROFILS: ("0.001", "0.012"),
     EFFECTIFS: ("0.025", "0.015"),
-    BOUNCE: ("0.001", "0.0015"),
-    ZAIQ: ("0.001", "0.001"),
 }
 
 
@@ -49,7 +48,7 @@ class Etat(TypedDict, total=False):
 
 
 def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=True,
-                      harvest_effectifs=True, zaiq=True, fiche=None, elargi=False):
+                      harvest_effectifs=True, fiche=None, elargi=False):
     def selection(etat):
         source = sorted(set(etat.get("source") or kerix.source(etat["rubrique"])))
         return {"source": source, "tirage": tirer(source, etat["taille"], etat["graine"]),
@@ -68,7 +67,7 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
         try:
             lignes, provenance = budget.lignes(
                 acteur, entree, cout(acteur, volume, demarrages),
-                verification=cout(BOUNCE, volume) + (cout(ZAIQ, volume) if zaiq else 0),
+                verification=plafond_lot(volume),
                 max_items=volume,
             )
         except (BudgetInsuffisant, URLError, TimeoutError, RuntimeError) as erreur:
@@ -118,45 +117,27 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
             else:
                 attentes.extend({**d, "motif": "Adresse partagée entre plusieurs dossiers"} for d in choix)
         emails = sorted(distincts.keys() - controles.keys())
-        plafond_atteint = False
-        if emails:
-            primaires = controle(budget, BOUNCE, emails, cout(BOUNCE, len(emails)),
-                                reserve=cout(ZAIQ, len(emails)) if zaiq else 0)
-            recours = sorted(a for a, v in primaires.items() if v["verdict"] == "timeout")
-            secours = controle(budget, ZAIQ, recours, cout(ZAIQ, len(recours))) if zaiq and recours else {}
-            plafond_atteint = any(v["verdict"] == "plafond" for v in [*primaires.values(), *secours.values()])
-            for adresse, v in primaires.items():
-                controles[adresse] = [v, secours[adresse]] if adresse in secours else [v]
-        admissions, roles, personnes = [], set(), {d["linkedin"] for d in etat["admis"]}
-        for adresse, d in sorted(distincts.items(), key=lambda item: (
-                PRIORITES[item[1]["poste"]["fonction"]], item[1]["linkedin"], item[0])):
+        controles_dns = controler_dns(budget, emails)
+        controles.update({adresse: [resultat] for adresse, resultat in controles_dns.items()})
+        for adresse, d in distincts.items():
             d["verifications"] = controles[adresse]
             verdict = d["verifications"][-1]["verdict"]
-            d["adresse_admise"] = adresse if verdict == "accepte" else ""
-            d["decision_finale"] = q = avis(d, "final")
+            motif = ("DNS positif · preuve SMTP requise" if verdict == "dns_ok" else "Contrôle DNS · " + verdict)
+            d["decision_finale"] = {"verdict": "en_attente", "email": adresse, "motif": motif}
             preuve_identite = d["entreprise"].get("preuve_identite")
             d["preuves"] = [
                 {"url": d["entreprise"]["kerix"], "extrait": "ICE " + d["entreprise"]["ice"]},
                 {"url": d["linkedin"], "extrait": d["poste"]["titre"], "origine": d["provenance"],
                  "pointeur": d["poste"]["pointeur"]},
                 *([preuve_identite] if preuve_identite else []),
-                *(s for decision in (d["decision_initiale"], q) for s in decision.get("sources", [])
-                  if urlsplit(s["url"]).scheme in {"https", "http"} and urlsplit(s["url"]).hostname
-                  and s["extrait"].strip()),
+                *(source for source in d["decision_initiale"].get("sources", [])
+                  if urlsplit(source["url"]).scheme in {"https", "http"} and urlsplit(source["url"]).hostname
+                  and source["extrait"].strip()),
             ]
-            cle = d["entreprise"]["ice"], d["poste"]["fonction"]
-            if verdict != "accepte" or q["verdict"] != "admis" or q["email"] != adresse:
-                attentes.append({**d, "motif": f"{verdict} · {q['motif']}"})
-            elif cle in roles or d["linkedin"] in personnes:
-                attentes.append({**d, "motif": "Fonction ou personne déjà retenue"})
-            else:
-                roles.add(cle)
-                personnes.add(d["linkedin"])
-                admissions.append(d)
+            attentes.append({**d, "motif": motif})
         return {"candidats": etat["candidats"] + list(dossiers.values()),
                 "attentes": etat["attentes"] + attentes, "controles": controles,
-                "admis": etat["admis"] + crm.admettre(etat["campagne"], admissions),
-                "plafond_atteint": plafond_atteint}
+                "plafond_atteint": any(v["verdict"] == "plafond" for v in controles_dns.values())}
 
     def pipeline(etat, role):
         entreprises = restantes(etat)
@@ -178,8 +159,9 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
             if apres_effectifs and d["fournisseur"] != "Harvest effectifs":
                 continue
             ice = d["entreprise"]["ice"]
-            if ice in ices and not any(v[-1]["fournisseur"] == ZAIQ and v[-1]["verdict"] == "inconnu"
-                                     for a, v in etat["controles"].items() if a in d["adresses"]):
+            if ice in ices and (not d["adresses_recevables"] or any(
+                    etat["controles"].get(a, [{}])[-1].get("verdict") in {"rejete", "risque"}
+                    for a in d["adresses_recevables"])):
                 personnes.setdefault(d["linkedin"], set()).add(ice)
         if not personnes or not harvest_profils or etat.get("plafond_atteint"):
             return {}
@@ -237,7 +219,7 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
     if elargi:
         from .acquisition_elargie import noeuds_elargis
         noeuds.extend(noeuds_elargis(crm, budget, harvest_profils=harvest_profils,
-                                     harvest_effectifs=harvest_effectifs, zaiq=zaiq,
+                                     harvest_effectifs=harvest_effectifs,
                                      acteurs=(PIPELINE, PROFILS, EFFECTIFS)))
     else:
         noeuds.extend((role, lambda etat, role=role: pipeline(etat, role)) for role in TITRES)

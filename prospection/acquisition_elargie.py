@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from .collecte import url_personnelle
 from .identite_serp import EMAIL, SERP, coordonnees_site, entree_serp, resoudre
-from .qualification_kerix import BOUNCE, ZAIQ, controle, normaliser_verdict
+from .verification_dns import ACTEUR_DNS, FRAIS_MAX_ADRESSE, FRAIS_MAX_LOT, controler_dns
 from .recherche_dirigeants import adresses, domaine, fonction, normaliser, page_entreprise, postes, premier
 
 
@@ -53,7 +53,7 @@ def candidats_elargis(lignes, fournisseur, entreprises, provenance, personnes=No
     return resultats, attentes
 
 
-def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, zaiq, acteurs,
+def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
                     lire_site=coordonnees_site, resoudre_serp=resoudre):
     pipeline, profils, effectifs = acteurs
 
@@ -156,48 +156,24 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, zaiq, act
                 if index < len(options):
                     a, c = options[index]
                     choisies[a] = c
-        officielles = {a for a, c in choisies.items() if c["fournisseur"] == "Site officiel"}
-        for a in choisies.keys() & controles.keys():
-            vv = controles[a]
-            controles[a] = [
-                {**v, "verdict": normaliser_verdict(v["fournisseur"], v["brut"], boite_officielle=a in officielles)}
-                if isinstance(v.get("brut"), dict) else v for v in vv
-            ]
-        a_verifier = [a for a in choisies if a not in controles]
+        a_verifier = [a for a in choisies if not any(v["fournisseur"] == ACTEUR_DNS
+                                                    for v in controles.get(a, []))]
         solde = budget.solde()
-        limite = min(100, int(max(Decimal(0), solde - Decimal("0.02")) / Decimal("0.003")))
-        lot = sorted(a_verifier[:limite])
-        if lot:
-            maximum = Decimal("0.01") + len(lot) * Decimal("0.002")
-            reserve = Decimal("0.01") + len(lot) * Decimal("0.001") if zaiq else Decimal(0)
-            primaires = controle(budget, BOUNCE, lot, maximum, reserve=reserve, officielles=officielles)
-            controles.update({a: [v] for a, v in primaires.items()})
-        timeouts = sorted(a for a in choisies if a in controles and len(controles[a]) == 1
-                          and controles[a][0]["verdict"] == "timeout")
-        if timeouts and zaiq:
-            plafond = Decimal("0.01") + len(timeouts) * Decimal("0.001")
-            recours = controle(budget, ZAIQ, timeouts, plafond, officielles=officielles)
-            for a, v in recours.items():
-                controles[a] = [*controles[a], v]
-        nouveaux, attentes = [], []
-        for a, c in choisies.items():
-            ice = c["entreprise"]["ice"]
-            verifications = controles.get(a, [])
-            preuve = verifications[-1] if verifications else {}
-            if ice in deja_admis:
-                continue
-            if preuve.get("verdict") != "accepte":
-                attentes.append({"ice": ice, "motif": "Vérification Apify · " + preuve.get("verdict", "hors lot"),
-                                 "adresse": a, "verifications": controles.get(a, [])})
-                continue
-            nouveaux.append({
-                **c, "adresse_admise": a, "verifications": verifications, "mode_verification": "apify",
-                "decision_initiale": {"verdict": "qualifie", "email": a, "motif": "Adresse rattachée à l’entreprise"},
-                "decision_finale": {"verdict": "admis", "email": a, "motif": "Adresse exacte validée par un vérificateur Apify"},
-            })
-            deja_admis.add(ice)
-        return {"admis": etat["admis"] + crm.admettre(etat["campagne"], nouveaux), "controles": controles,
-                "attentes": etat["attentes"] + attentes}
+        limite = int(max(Decimal(0), solde - FRAIS_MAX_LOT) / FRAIS_MAX_ADRESSE)
+        controles_dns = controler_dns(budget, a_verifier[:limite])
+        for adresse, resultat in controles_dns.items():
+            controles[adresse] = [*controles.get(adresse, []), resultat]
+
+        attentes = []
+        for adresse, candidat in choisies.items():
+            preuves = controles.get(adresse, [])
+            resultat = next((v for v in reversed(preuves) if v["fournisseur"] == ACTEUR_DNS), {})
+            verdict = resultat.get("verdict", "hors lot")
+            motif = ("DNS positif · preuve SMTP requise" if verdict == "dns_ok" else "Contrôle DNS · " + verdict)
+            attentes.append({"ice": candidat["entreprise"]["ice"], "motif": motif, "adresse": adresse,
+                             "verifications": preuves})
+        return {"controles": controles, "attentes": etat["attentes"] + attentes,
+                "plafond_atteint": etat.get("plafond_atteint", False) or len(a_verifier) > limite}
 
     def par_profil(etat):
         es = restantes(etat)
@@ -231,7 +207,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, zaiq, act
 
     return [
         ("resoudre_identites", identites), ("lire_sites_officiels", sites),
-        ("pipeline_domaine", par_domaine), ("pipeline_nom", par_nom), ("verifier_premier_lot", verifier),
+        ("pipeline_domaine", par_domaine), ("pipeline_nom", par_nom),
         ("harvest_profils_elargis", par_profil), ("harvest_effectifs_elargis", par_employeur),
-        ("verifier_recours", verifier),
+        ("controler_dns", verifier),
     ]

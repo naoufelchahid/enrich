@@ -13,6 +13,7 @@ from prospection.kerix import RUBRIQUES, Kerix, tirer
 from prospection.kerix_pilote import confirmer_identites
 from prospection.recherche_dirigeants import fonction
 from prospection.qualification_kerix import BOUNCE, ZAIQ, normaliser_verdict
+from prospection.verification_dns import ACTEUR_DNS
 
 
 class API:
@@ -125,7 +126,13 @@ def bounce_ok(adresse):
             "is_disposable": False, "is_role_based": False, "is_free_provider": False, "risk_type": "none"}
 
 
-def test_acquisition_admet_et_regroupe_les_recours():
+def dns_ok(adresse):
+    return {"email": adresse, "deliverability": "valid", "hasValidSyntax": True,
+            "hasMxRecord": True, "isDisposable": False, "isAcceptable": True,
+            "didYouMean": False, "reason": "mx_record_present"}
+
+
+def test_acquisition_regroupe_les_recours_et_conserve_les_verdicts_dns():
     a, b, c, d, e, f = [
         fiche(nom, str(i).zfill(15), site=f"https://{nom}.example",
               linkedin=f"https://www.linkedin.com/company/{nom}")
@@ -147,33 +154,27 @@ def test_acquisition_admet_et_regroupe_les_recours():
             return [harvest({**maison_mere, "email": "anne@d.example"})]
         if acteur == EFFECTIFS:
             return [harvest(candidat("emma", e, "emma@e.example"))]
-        if acteur == BOUNCE:
-            return [{"email": mail, "status": "timeout"} if mail in ("tom@b.example", "theo@c.example") else
-                    {"email": mail, "status": "invalid"} if mail == "luc@f.example" else bounce_ok(mail)
-                    for mail in reversed(entree["emails"])]
-        assert acteur == ZAIQ
-        return [{"email": "tom@b.example", "status": "deliverable", "safeToSend": True,
-                 "isCatchAll": False, "isDisposable": False, "isRoleAddress": False, "isFreeProvider": False},
-                {"email": "theo@c.example", "status": "unknown"}]
+        assert acteur == ACTEUR_DNS
+        return [{**dns_ok(mail), "deliverability": "unknown"} if mail in ("tom@b.example", "theo@c.example")
+                else {**dns_ok(mail), "deliverability": "invalid"} if mail == "luc@f.example"
+                else dns_ok(mail) for mail in reversed(entree["emails"])]
 
     fiches = {x["kerix"]: x for x in (a, b, c, d, e, f)}
     acteurs, crm = Acteurs(jeux), Twenty(API())
     resultat = graphe_acquisition(Kerix(), crm, acteurs, juger, fiche=fiches.__getitem__).invoke(
         {"source": list(fiches), "rubrique": "21300", "taille": 6, "graine": 4, "campagne": "A"})
-    assert {x["adresse_admise"] for x in resultat["admis"]} == {
-        "lea@a.example", "tom@b.example", "anne@d.example", "emma@e.example",
-    }
-    assert any("Rattachement" in x["motif"] or "employeur non confirmé" in x["motif"] for x in resultat["attentes"])
-    assert any(x["linkedin"].endswith("/anne") and "groupe.example" in str(x) for x in resultat["attentes"])
-    assert resultat["bilan"]["entreprises_couvertes"] == 4
-    assert [v["verdict"] for v in resultat["controles"]["theo@c.example"]] == ["timeout", "inconnu"]
-    assert [entree["emails"] for acteur, entree in acteurs.appels if acteur == ZAIQ] == [
-        ["theo@c.example", "tom@b.example"]]
+    assert resultat["admis"] == []
+    assert any("employeur non confirmé" in x["motif"] for x in resultat["attentes"])
+    assert any(x["linkedin"].endswith("/anne") and "groupe.example" in str(x) for x in resultat["attentes"]
+               if x.get("linkedin"))
+    assert resultat["bilan"]["entreprises_couvertes"] == 0
+    assert [v["verdict"] for v in resultat["controles"]["theo@c.example"]] == ["inconnu"]
     assert [entree["urls"] for acteur, entree in acteurs.appels if acteur == PROFILS] == [
         ["https://www.linkedin.com/in/anne", "https://www.linkedin.com/in/luc"]]
     assert [entree["companies"] for acteur, entree in acteurs.appels if acteur == EFFECTIFS] == [[e["linkedin"]]]
-    assert all("a.example" not in e["companyDomainIncludes"]
-               for e in [entree for acteur, entree in acteurs.appels if acteur == PIPELINE][1:])
+    assert {a for a, vv in resultat["controles"].items() if vv[-1]["verdict"] == "dns_ok"} == {
+        "lea@a.example", "anne@d.example", "emma@e.example",
+    }
 
 
 def test_budget_reserve_verification_et_reutilise_run():
@@ -307,19 +308,20 @@ def test_recherche_adresse_du_profil_identifie_par_harvest_effectifs():
         if acteur == PROFILS:
             assert entree["urls"] == [dirigeante["linkedinUrl"]]
             return [{**dirigeante, "email": "lea@a.example"}]
-        assert acteur == BOUNCE and entree["emails"] == ["lea@a.example"]
-        return [bounce_ok("lea@a.example")]
+        assert acteur == ACTEUR_DNS and entree["emails"] == ["lea@a.example"]
+        return [dns_ok("lea@a.example")]
 
     acteurs = Acteurs(jeux)
     resultat = graphe_acquisition(Kerix(), Twenty(API()), acteurs, juger, fiche=lambda url: e).invoke({
         "source": [e["kerix"]], "rubrique": "21300", "taille": 1, "graine": 0, "campagne": "A",
     })
-    admis, = resultat["admis"]
-    assert admis["adresse_admise"] == "lea@a.example"
-    assert admis["recherches_precedentes"][0]["fournisseur"] == "Harvest effectifs"
+    assert resultat["admis"] == []
+    assert resultat["controles"]["lea@a.example"][0]["verdict"] == "dns_ok"
+    d = next(c for c in resultat["candidats"] if c["fournisseur"] == "Harvest profils")
+    assert d["recherches_precedentes"][0]["fournisseur"] == "Harvest effectifs"
 
 
-def test_cascade_elargie_retient_poste_libre_et_bloque_une_adresse_a_risque(monkeypatch):
+def test_cascade_elargie_retient_des_candidats_et_conserve_la_barriere_smtp(monkeypatch):
     from decimal import Decimal
     from prospection import acquisition_elargie as module
     from prospection.envoi_campagne import adresse_admise
@@ -347,11 +349,8 @@ def test_cascade_elargie_retient_poste_libre_et_bloque_une_adresse_a_risque(monk
             ]
         if acteur == PIPELINE:
             return []
-        if acteur == BOUNCE:
-            return [{"email": a, "status": "timeout"} if a.endswith("@c.example") else bounce_ok(a)
-                    for a in entree["emails"]]
-        if acteur == ZAIQ:
-            return [{"email": a, "status": "deliverable", "safeToSend": True, "isCatchAll": True}
+        if acteur == ACTEUR_DNS:
+            return [{**dns_ok(a), "deliverability": "risky"} if a.endswith("@c.example") else dns_ok(a)
                     for a in entree["emails"]]
         return []
 
@@ -366,21 +365,23 @@ def test_cascade_elargie_retient_poste_libre_et_bloque_une_adresse_a_risque(monk
     crm = Twenty(API())
     graphe = graphe_acquisition(Kerix(), crm, ActeursElargis(jeux), elargi=True, fiche=fiches.__getitem__)
     bilan = graphe.invoke({"source": list(fiches), "rubrique": "21300", "taille": 3, "graine": 4, "campagne": "A"})
-    assert {d["adresse_admise"] for d in bilan["admis"]} == {"camille@a.example", "contact@b.example"}
+    assert bilan["admis"] == []
     assert len(bilan["candidats"]) == 3
-    assert any(acteur == BOUNCE for acteur, _ in appels)
-    assert [entree["emails"] for acteur, entree in appels if acteur == ZAIQ] == [["dani@c.example"]]
-    for d in bilan["admis"]:
-        assert not d["linkedin"]
-        p = crm.record("people", d["twenty_id"])
-        assert adresse_admise(p) == d["adresse_admise"]
-        dossier = json.loads(p["prospectingDossier"])
-        brut = dossier["verifications"][-1]["brut"]
-        assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) == d["adresse_admise"]
-        brut["email"] = "autre@example.invalid"
-        assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None
-        brut.update(email=d["adresse_admise"], is_catch_all=True)
-        assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None
+    assert [(acteur, entree["emails"]) for acteur, entree in appels if acteur == ACTEUR_DNS] == [
+        (ACTEUR_DNS, ["camille@a.example", "contact@b.example", "dani@c.example"])]
+    assert bilan["bilan"]["verdicts_verification"] == {"dns_ok": 2, "risque": 1}
+    a, = [x for x in bilan["entreprises"] if x["nom"] == "a"]
+    contact = dossier(a, "camille")
+    contact["mode_verification"] = "apify"
+    contact["verifications"] = [{
+        "verdict": "accepte", "adresse": "camille@a.example", "fournisseur": BOUNCE,
+        "brut": bounce_ok("camille@a.example"),
+    }]
+    entre, = crm.admettre("A", [contact])
+    p = crm.record("people", entre["twenty_id"])
+    assert adresse_admise(p, preuve_apify_exigee=True) == "camille@a.example"
+    contact["verifications"] = bilan["controles"]["camille@a.example"]
+    assert adresse_admise({**p, "prospectingDossier": json.dumps(contact)}, preuve_apify_exigee=True) is None
 
 
 

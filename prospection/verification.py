@@ -1,5 +1,8 @@
-"""Interpréter les candidats HarvestAPI et les résultats BounceVerify."""
+"""Interpréter les candidats HarvestAPI et contrôler leur DNS."""
+from hashlib import sha256
 from urllib.parse import urlsplit
+
+from .verification_dns import ACTEUR_DNS, entree_lot, rapprocher_dns
 
 
 def candidats(profil):
@@ -49,36 +52,13 @@ def candidats_employeur_actuel(profil):
     return [decision["email"]] if decision["verdict"] == "correspond" else []
 
 
-def verdict(ligne):
-    risques = ("is_catch_all", "is_disposable", "is_role_based", "is_free_provider")
-    if not ligne or any(type(ligne.get(k)) is not bool for k in (*risques, "smtp_valid")):
-        return "attente_technique"
-    statut = ligne.get("status")
-    if statut == "risky" and any(ligne[k] for k in risques):
-        return "rejete"
-    if statut == "valid" and ligne["smtp_valid"]:
-        return "rejete" if any(ligne[k] for k in risques) else "accepte"
-    if statut == "invalid" and not ligne["smtp_valid"]:
-        return "rejete"
-    return "attente_technique"
-
 
 def verifier(fournisseur, base, cle, selection):
-    adresses = sorted({a.strip().casefold() for a in selection})
+    adresses = sorted({a.strip().casefold() for a in selection if a.strip()})
     resultats = {}
     for debut in range(0, len(adresses), 5000):
         lot = adresses[debut:debut + 5000]
-        import hashlib
-        identifiant = hashlib.sha256("\n".join(lot).encode()).hexdigest()
-        lignes = fournisseur.lignes(base, cle + ":" + identifiant,
-            "bounceverify~bounceverify-email-verifier",
-            {"emails": lot, "concurrency": 10, "timeoutSecs": 120, "skipInvalidSyntax": True})
-        recus = {}
-        for ligne in lignes:
-            adresse = str(ligne.get("email", "")).strip().casefold()
-            if adresse in lot:
-                recus[adresse] = None if adresse in recus else ligne
-        for adresse in lot:
-            ligne = recus.get(adresse)
-            resultats[adresse] = {"verdict": verdict(ligne), "brut": ligne}
+        identifiant = sha256("\n".join(lot).encode()).hexdigest()
+        lignes = fournisseur.lignes(base, cle + ":dns:" + identifiant, ACTEUR_DNS, entree_lot(lot))
+        resultats.update(rapprocher_dns(lot, lignes))
     return resultats

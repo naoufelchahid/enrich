@@ -18,6 +18,17 @@ def traiter_lot(base, campagne, profils, fournisseur, importer, qualification=qu
                          [d["email"] for d in decisions.values() if d["verdict"] == "correspond"])
     for url, decision in decisions.items():
         controle = controles.get(decision.get("email"))
+        if controle and controle["verdict"] == "dns_ok":
+            precedent = base.execute(
+                "SELECT qualification, verification, twenty_id FROM decisions WHERE campagne=? AND identite=?",
+                (campagne, url),
+            ).fetchone()
+            if precedent and precedent[2]:
+                qualification_precedente, preuve = map(json.loads, precedent[:2])
+                if ((preuve or {}).get("verdict") == "accepte" and
+                        all(qualification_precedente.get(champ) == decision.get(champ)
+                            for champ in ("email", "domaine", "profil_sha256"))):
+                    continue
         with base:
             base.execute("""INSERT INTO decisions VALUES (?, ?, ?, ?, NULL)
                 ON CONFLICT(campagne, identite) DO UPDATE SET
