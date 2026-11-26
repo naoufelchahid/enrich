@@ -62,12 +62,18 @@ def premier(objet, *champs):
 
 def postes(ligne, fournisseur):
     if fournisseur == "PipelineLabs":
+        if ligne.get("isCurrent") is False or ligne.get("is_current") is False:
+            return []
+        organisation = ligne.get("organization") or ligne.get("company")
+        organisation = organisation if isinstance(organisation, dict) else {}
         return [{
             "titre": premier(ligne, "title", "jobTitle", "personTitle"),
-            "nom": premier(ligne, "companyName", "company_name", "organizationName"),
-            "domaine": domaine(premier(ligne, "companyDomain", "companyWebsite", "company_domain", "website")),
+            "nom": premier(ligne, "companyName", "company_name", "organizationName") or organisation.get("name"),
+            "domaine": domaine(premier(ligne, "companyDomain", "companyWebsite", "company_domain", "website")
+                                or premier(organisation, "primary_domain", "domain", "website_url", "website")),
             "linkedin": page_entreprise(premier(ligne, "companyLinkedinUrl", "companyLinkedInUrl",
-                                               "companyLinkedin", "company_linkedin_url")),
+                                               "companyLinkedin", "company_linkedin_url")
+                                         or premier(organisation, "linkedin_url", "linkedinUrl")),
             "pointeur": "/",
         }]
     resultats = []
@@ -98,7 +104,7 @@ def adresses(ligne):
 def candidats(lignes, fournisseur, entreprises, personnes=None, provenance=None):
     rapproches, attentes = [], []
     for ligne in lignes:
-        url = url_personnelle(premier(ligne, "linkedinUrl", "linkedin_url", "personLinkedinUrl"))
+        url = url_personnelle(premier(ligne, "linkedinUrl", "linkedin_url", "personLinkedinUrl", "personLinkedInUrl"))
         choix = {}
         for poste in postes(ligne, fournisseur):
             role = fonction(poste["titre"])
@@ -119,9 +125,11 @@ def candidats(lignes, fournisseur, entreprises, personnes=None, provenance=None)
                              if len(choix) > 1 else "Profil, fonction ou employeur non confirmé", "brut": ligne})
             continue
         entreprise, poste, role = next(iter(choix.values()))
+        nom_complet = str(premier(ligne, "fullName", "full_name")).strip()
+        debut_nom, _, fin_nom = nom_complet.partition(" ")
         rapproches.append({
-            "linkedin": url, "prenom": premier(ligne, "firstName", "first_name"),
-            "nom": premier(ligne, "lastName", "last_name"), "entreprise": entreprise,
+            "linkedin": url, "prenom": premier(ligne, "firstName", "first_name") or debut_nom,
+            "nom": premier(ligne, "lastName", "last_name") or fin_nom, "entreprise": entreprise,
             "poste": {**poste, "fonction": role, "version_titres": VERSION_TITRES},
             "fournisseur": fournisseur, "provenance": provenance, "profil": ligne,
             "adresses": adresses(ligne),
