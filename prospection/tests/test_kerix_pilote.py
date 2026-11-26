@@ -122,7 +122,7 @@ class Acteurs:
 
 def bounce_ok(adresse):
     return {"email": adresse, "status": "valid", "smtp_valid": True, "is_catch_all": False,
-            "is_disposable": False, "is_role_based": False, "is_free_provider": False}
+            "is_disposable": False, "is_role_based": False, "is_free_provider": False, "risk_type": "none"}
 
 
 def test_acquisition_admet_et_regroupe_les_recours():

@@ -68,7 +68,8 @@ def normaliser_verdict(acteur, brut):
                   for k in ("error_code", "reason", "reasonCode")}
         if statut in codes or codes & motifs:
             return "timeout"
-        if (statut == "valid" and brut.get("smtp_valid") is True and not brut.get("risk_type")
+        risque = str(brut.get("risk_type") or "").strip().casefold()
+        if (statut == "valid" and brut.get("smtp_valid") is True and risque in {"", "none"}
                 and all(brut.get(k) is False for k in risques)):
             return "accepte"
     if (acteur == ZAIQ and statut == "deliverable" and brut.get("safeToSend") is True
