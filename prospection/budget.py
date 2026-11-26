@@ -57,7 +57,9 @@ class Budget:
             if precedent and not precedent[0]:
                 raise RuntimeError("Lancement incertain, réservation conservée")
             if not precedent:
-                total = sum(montant(v["depense"]) + montant(v["engage"]) for v in self.bilan().values())
+                # Le total remonté par Apify peut évoluer après la fin d’un run.
+                # Les plafonds accordés restent donc imputés sur l’enveloppe du pilote.
+                total = sum(montant(reserve) for reserve, in self.db.execute("SELECT reserve FROM budget_runs"))
                 if total + maximum + verification > self.plafond:
                     raise BudgetInsuffisant(f"Solde insuffisant pour {acteur}")
                 self.db.execute("INSERT INTO budget_runs VALUES (?,?,?,NULL,NULL)", (cle, acteur, str(maximum)))

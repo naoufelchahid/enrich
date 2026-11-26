@@ -205,6 +205,9 @@ def test_budget_reserve_verification_et_reutilise_run():
         assert len(apify.starts) == 1
         assert apify.starts[0]["maxTotalChargeUsd"] == ["2.75"]
         assert budget.bilan()["acteur"] == {"depense": "0.4", "engage": "0"}
+        with pytest.raises(BudgetInsuffisant):
+            budget.lignes("acteur", {"lot": 3}, "0.26")
+        assert len(apify.starts) == 1
 
 
 def dossier(entreprise, nom="lea"):
