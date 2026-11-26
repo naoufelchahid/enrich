@@ -169,11 +169,13 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
             "includeTitleVariants": False, "totalResults": volume, "dontSaveProgress": True,
         }, ciblees, volume)
 
-    def profils(etat):
+    def profils(etat, *, apres_effectifs=False):
         entreprises = restantes(etat)
         ices = {e["ice"] for e in entreprises}
         personnes = {}
         for d in etat["candidats"]:
+            if apres_effectifs and d["fournisseur"] != "Harvest effectifs":
+                continue
             ice = d["entreprise"]["ice"]
             if ice in ices and not any(v[-1]["fournisseur"] == ZAIQ and v[-1]["verdict"] == "inconnu"
                                      for a, v in etat["controles"].items() if a in d["adresses"]):
@@ -219,7 +221,11 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
     g = StateGraph(Etat)
     noeuds = [("tirage_kerix", selection), ("import_twenty", importer)]
     noeuds.extend((role, lambda etat, role=role: pipeline(etat, role)) for role in TITRES)
-    noeuds.extend([("harvest_profils", profils), ("harvest_effectifs", effectifs), ("bilan_acquisition", bilan)])
+    noeuds.extend([
+        ("harvest_profils", profils), ("harvest_effectifs", effectifs),
+        ("profils_identifies_par_harvest", lambda etat: profils(etat, apres_effectifs=True)),
+        ("bilan_acquisition", bilan),
+    ])
     precedent = START
     for nom, operation in noeuds:
         g.add_node(nom, operation)
