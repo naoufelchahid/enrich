@@ -1,5 +1,7 @@
 # Intégrer les entreprises avant la recherche de dirigeants
 
+Décision sur le vérificateur remplacée par la [fiche 0009](0009-utiliser-account56-pour-verifier-les-boites-mail.md).
+
 L’opérateur indique que la base Twenty est vide au départ du pilote de la rubrique Kerix 21300. L’ICE est obligatoire pour l’import. Les fiches Kerix sans ICE sont exclues de l’import et de la recherche de contacts. Le traitement rattache les contacts à l’identifiant Twenty de l’entreprise identifiée par son ICE. Les correspondances ambiguës passent en revue. Une entreprise identifiée par son ICE peut entrer dans Twenty sans site web et attendre la confirmation de sa page LinkedIn pour la recherche de contacts.
 
 Le tirage reproductible sélectionne une seule fois 30 fiches Kerix uniques de la rubrique, avant le contrôle de l’ICE. La composition du lot est alors définitive. Chaque fiche sans ICE compte parmi les 30 et figure au bilan des exclusions. Le nombre d’entreprises importées peut donc être inférieur à 30. La liste source et le paramètre de tirage sont conservés pour pouvoir reproduire le lot.

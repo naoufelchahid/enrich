@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from .collecte import url_personnelle
 from .identite_serp import EMAIL, SERP, coordonnees_site, entree_serp, resoudre
-from .verification_dns import ACTEUR_DNS, FRAIS_MAX_ADRESSE, FRAIS_MAX_LOT, controler_dns
+from .verification_account56 import ACTEUR_VERIFICATION, plafond_lot, verifier_lot
 from .recherche_dirigeants import adresses, domaine, fonction, normaliser, page_entreprise, postes, premier
 
 
@@ -57,7 +57,8 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
                     lire_site=coordonnees_site, resoudre_serp=resoudre):
     pipeline, profils, effectifs = acteurs
 
-    def rechercher(etat, acteur, entree, maximum, volume, *, reserve="0.18"):
+    def rechercher(etat, acteur, entree, maximum, volume):
+        reserve = plafond_lot(3 * len(etat["entreprises"]))
         try:
             return budget.lignes(acteur, entree, maximum, verification=reserve, max_items=volume), []
         except (OSError, ValueError, RuntimeError) as erreur:
@@ -69,7 +70,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         if not inconnues:
             return {}
         (lignes, provenance), attentes = rechercher(etat, SERP, entree_serp(inconnues),
-                                                    "0.50", len(inconnues), reserve="0.20")
+                                                    "0.50", len(inconnues))
         preuves = resoudre_serp(inconnues, lignes)
         entreprises = [{**e, **preuves.get(e["ice"], {})} for e in entreprises]
         for e in entreprises:
@@ -156,24 +157,45 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
                 if index < len(options):
                     a, c = options[index]
                     choisies[a] = c
-        a_verifier = [a for a in choisies if not any(v["fournisseur"] == ACTEUR_DNS
+        a_verifier = [a for a in choisies if not any(v["fournisseur"] == ACTEUR_VERIFICATION
                                                     for v in controles.get(a, []))]
-        solde = budget.solde()
-        limite = int(max(Decimal(0), solde - FRAIS_MAX_LOT) / FRAIS_MAX_ADRESSE)
-        controles_dns = controler_dns(budget, a_verifier[:limite])
-        for adresse, resultat in controles_dns.items():
+        controles_lot = verifier_lot(budget, a_verifier)
+        for adresse, resultat in controles_lot.items():
             controles[adresse] = [*controles.get(adresse, []), resultat]
 
-        attentes = []
+        admissions, attentes = [], []
+        personnes = {c["linkedin"] for c in etat["admis"] if c["linkedin"]}
         for adresse, candidat in choisies.items():
+            ice = candidat["entreprise"]["ice"]
+            if ice in deja_admis:
+                continue
             preuves = controles.get(adresse, [])
-            resultat = next((v for v in reversed(preuves) if v["fournisseur"] == ACTEUR_DNS), {})
+            resultat = next((v for v in reversed(preuves) if v["fournisseur"] == ACTEUR_VERIFICATION), {})
             verdict = resultat.get("verdict", "hors lot")
-            motif = ("DNS positif · preuve SMTP requise" if verdict == "dns_ok" else "Contrôle DNS · " + verdict)
-            attentes.append({"ice": candidat["entreprise"]["ice"], "motif": motif, "adresse": adresse,
-                             "verifications": preuves})
-        return {"controles": controles, "attentes": etat["attentes"] + attentes,
-                "plafond_atteint": etat.get("plafond_atteint", False) or len(a_verifier) > limite}
+            if verdict != "accepte":
+                attentes.append({"ice": ice, "motif": "Vérification Account56 · " + verdict,
+                                 "adresse": adresse, "verifications": preuves})
+                continue
+            linkedin = candidat["linkedin"]
+            if linkedin and linkedin in personnes:
+                attentes.append({"ice": ice, "motif": "Personne déjà retenue", "adresse": adresse,
+                                 "verifications": preuves})
+                continue
+            admissions.append({
+                **candidat, "adresse_admise": adresse, "verifications": preuves, "mode_verification": "apify",
+                "decision_initiale": {"verdict": "qualifie", "email": adresse, "motif": "Adresse rattachée à l’entreprise"},
+                "decision_finale": {"verdict": "admis", "email": adresse, "motif": "Boîte validée par Account56"},
+            })
+            deja_admis.add(ice)
+            if linkedin:
+                personnes.add(linkedin)
+        return {
+            "admis": etat["admis"] + crm.admettre(etat["campagne"], admissions),
+            "controles": controles,
+            "attentes": etat["attentes"] + attentes,
+            "plafond_atteint": (etat.get("plafond_atteint", False)
+                                or any(v["verdict"] == "plafond" for v in controles_lot.values())),
+        }
 
     def par_profil(etat):
         es = restantes(etat)
@@ -194,7 +216,8 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         es = [e for e in restantes(etat) if page_entreprise(e["linkedin"])]
         if not es or not harvest_effectifs:
             return {}
-        taille = min(len(es), int(max(Decimal(0), budget.solde() - Decimal("0.18")) / Decimal("0.055")))
+        reserve = plafond_lot(3 * len(etat["entreprises"]))
+        taille = min(len(es), int(max(Decimal(0), budget.solde() - reserve) / Decimal("0.055")))
         es = es[:taille]
         if not es:
             return {"attentes": etat["attentes"] + [{"fournisseur": effectifs, "motif": "Solde insuffisant"}]}
@@ -209,5 +232,5 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         ("resoudre_identites", identites), ("lire_sites_officiels", sites),
         ("pipeline_domaine", par_domaine), ("pipeline_nom", par_nom),
         ("harvest_profils_elargis", par_profil), ("harvest_effectifs_elargis", par_employeur),
-        ("controler_dns", verifier),
+        ("verifier_adresses", verifier),
     ]

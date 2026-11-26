@@ -38,12 +38,15 @@ class Apify:
         with urlopen(demande, timeout=90) as resultat:
             return json.load(resultat)
 
-    def lignes(self, base, cle, acteur, entree):
+    def lignes(self, base, cle, acteur, entree, *, max_total_charge_usd=None):
         ligne = base.execute("SELECT run FROM runs WHERE cle=?", (cle,)).fetchone()
         if ligne:
             run = self.appeler("actor-runs/" + ligne[0])["data"]
         else:
-            run = self.appeler("acts/" + acteur + "/runs", entree)["data"]
+            chemin = "acts/" + acteur + "/runs"
+            if max_total_charge_usd is not None:
+                chemin += "?" + urlencode({"maxTotalChargeUsd": str(max_total_charge_usd)})
+            run = self.appeler(chemin, entree)["data"]
             with base:
                 base.execute("INSERT INTO runs VALUES (?,?,?)",
                              (cle, run["id"], run["defaultDatasetId"]))

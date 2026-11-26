@@ -1,10 +1,8 @@
-"""Qualification Codex et relecture des preuves SMTP historiques."""
+"""Qualification Codex des dossiers Kerix."""
 import re
 from .codex_serveur import decision
 from .recherche_dirigeants import TITRES, domaine
 
-BOUNCE = "bounceverify~bounceverify-email-verifier"
-ZAIQ = "zaiq~email-verifier"
 FONCTIONS_GENERIQUES = {
     "admin", "bonjour", "commercial", "compta", "contact", "direction", "hello", "info",
     "office", "recrutement", "sales", "service", "support", "team", "webmaster", "noreply",
@@ -47,34 +45,3 @@ def adresse_recevable(adresse, entreprise):
 def qualifier(dossier, etape):
     return decision(INSTRUCTIONS, PROMPTS[etape], {**dossier, "titres_autorises": TITRES}, SCHEMA,
                     browsentic=etape == "initial")
-
-
-def normaliser_verdict(acteur, brut, *, boite_officielle=False):
-    """Interpréter une preuve SMTP déjà enregistrée dans Twenty."""
-    if brut is None:
-        return "manquant"
-    statut = str(brut.get("status") or brut.get("verdict") or "").casefold()
-    risques = ("is_catch_all", "is_disposable", "is_role_based")
-    risques_zaiq = ("isCatchAll", "isDisposable", "isRoleAddress")
-    if not boite_officielle:
-        risques += ("is_free_provider",)
-        risques_zaiq += ("isFreeProvider",)
-    if (statut in {"catch_all", "catch-all", "risky", "undeliverable", "invalid"}
-            or any(brut.get(k) is True for k in (*risques, *risques_zaiq))):
-        return "rejete"
-    if acteur == BOUNCE:
-        codes = {"timeout", "smtp_timeout", "connection_timeout"}
-        motifs = {str(brut.get(k) or "").strip().casefold().replace(" ", "_")
-                  for k in ("error_code", "reason", "reasonCode")}
-        raison = str(brut.get("reason") or "").strip().casefold()
-        delai_smtp = re.fullmatch(r"smtp (?:connection to \S+ timed out|verification exceeded time budget)[.!]?", raison)
-        if statut in codes or codes & motifs or delai_smtp:
-            return "timeout"
-        risque = str(brut.get("risk_type") or "").strip().casefold()
-        if (statut == "valid" and brut.get("smtp_valid") is True and risque in {"", "none"}
-                and all(brut.get(k) is False for k in risques)):
-            return "accepte"
-    if (acteur == ZAIQ and statut == "deliverable" and brut.get("safeToSend") is True
-            and all(brut.get(k) is False for k in risques_zaiq)):
-        return "accepte"
-    return "inconnu"

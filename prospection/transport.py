@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from urllib.request import Request,urlopen
 from .collecte import url_personnelle
+from .verification_account56 import preuve_acceptee
 
 
 def requete(url,jeton,corps=None,methode=None):
@@ -19,12 +20,13 @@ def crm(chemin,corps=None,methode=None):
 
 
 def eligible(entree,adresse):
+    if not preuve_acceptee(entree.get("verification"), adresse):
+        return False
     data=crm("people/"+entree["twenty_id"])["data"]
     p=next(iter(data.values()))
     return (p["id"]==entree["twenty_id"] and p.get("campaignStatus") in (None,"","READY_TO_MAIL")
             and p["emails"]["primaryEmail"].casefold()==adresse
-            and url_personnelle(p["linkedinLink"]["primaryLinkUrl"])==entree["identite"]
-            and entree["verification"]["brut"]["email"].casefold()==adresse)
+            and url_personnelle(p["linkedinLink"]["primaryLinkUrl"])==entree["identite"])
 
 
 def envoyer(charge):

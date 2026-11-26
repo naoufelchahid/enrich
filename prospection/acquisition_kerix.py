@@ -10,8 +10,8 @@ from langgraph.graph import END, START, StateGraph
 from .budget import BudgetInsuffisant, montant
 from .kerix import tirer
 from .qualification_kerix import adresse_recevable, qualifier
-from .verification_dns import controler_dns, plafond_lot
-from .recherche_dirigeants import TITRES, candidats, domaine, page_entreprise
+from .verification_account56 import plafond_lot, verifier_lot
+from .recherche_dirigeants import PRIORITES, TITRES, candidats, domaine, page_entreprise
 
 PIPELINE = "pipelinelabs~lead-scraper-apollo-zoominfo-lusha-ppe"
 PROFILS = "harvestapi~linkedin-profile-scraper"
@@ -117,27 +117,43 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
             else:
                 attentes.extend({**d, "motif": "Adresse partagée entre plusieurs dossiers"} for d in choix)
         emails = sorted(distincts.keys() - controles.keys())
-        controles_dns = controler_dns(budget, emails)
-        controles.update({adresse: [resultat] for adresse, resultat in controles_dns.items()})
-        for adresse, d in distincts.items():
+        controles_lot = verifier_lot(budget, emails)
+        controles.update({adresse: [resultat] for adresse, resultat in controles_lot.items()})
+        plafond_atteint = etat.get("plafond_atteint", False) or any(
+            v["verdict"] == "plafond" for v in controles_lot.values())
+        admissions, roles, personnes = [], set(), {d["linkedin"] for d in etat["admis"]}
+        for adresse, d in sorted(distincts.items(), key=lambda item: (
+                PRIORITES[item[1]["poste"]["fonction"]], item[1]["linkedin"], item[0])):
             d["verifications"] = controles[adresse]
             verdict = d["verifications"][-1]["verdict"]
-            motif = ("DNS positif · preuve SMTP requise" if verdict == "dns_ok" else "Contrôle DNS · " + verdict)
-            d["decision_finale"] = {"verdict": "en_attente", "email": adresse, "motif": motif}
+            d["adresse_admise"] = adresse if verdict == "accepte" else ""
+            d["decision_finale"] = q = (avis(d, "final") if verdict == "accepte" else {
+                "verdict": "en_attente", "email": adresse, "motif": "Vérification Account56 · " + verdict,
+            })
+            d["mode_verification"] = "apify"
             preuve_identite = d["entreprise"].get("preuve_identite")
             d["preuves"] = [
                 {"url": d["entreprise"]["kerix"], "extrait": "ICE " + d["entreprise"]["ice"]},
                 {"url": d["linkedin"], "extrait": d["poste"]["titre"], "origine": d["provenance"],
                  "pointeur": d["poste"]["pointeur"]},
                 *([preuve_identite] if preuve_identite else []),
-                *(source for source in d["decision_initiale"].get("sources", [])
-                  if urlsplit(source["url"]).scheme in {"https", "http"} and urlsplit(source["url"]).hostname
-                  and source["extrait"].strip()),
+                *(s for decision in (d["decision_initiale"], q) for s in decision.get("sources", [])
+                  if urlsplit(s["url"]).scheme in {"https", "http"} and urlsplit(s["url"]).hostname
+                  and s["extrait"].strip()),
             ]
-            attentes.append({**d, "motif": motif})
+            cle = d["entreprise"]["ice"], d["poste"]["fonction"]
+            if verdict != "accepte" or q["verdict"] != "admis" or q["email"] != adresse:
+                attentes.append({**d, "motif": q["motif"]})
+            elif cle in roles or d["linkedin"] in personnes:
+                attentes.append({**d, "motif": "Fonction ou personne déjà retenue"})
+            else:
+                roles.add(cle)
+                personnes.add(d["linkedin"])
+                admissions.append(d)
         return {"candidats": etat["candidats"] + list(dossiers.values()),
                 "attentes": etat["attentes"] + attentes, "controles": controles,
-                "plafond_atteint": any(v["verdict"] == "plafond" for v in controles_dns.values())}
+                "admis": etat["admis"] + crm.admettre(etat["campagne"], admissions),
+                "plafond_atteint": plafond_atteint}
 
     def pipeline(etat, role):
         entreprises = restantes(etat)

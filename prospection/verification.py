@@ -1,8 +1,8 @@
-"""Interpréter les candidats HarvestAPI et contrôler leur DNS."""
+"""Interpréter les candidats HarvestAPI et vérifier leurs adresses."""
 from hashlib import sha256
 from urllib.parse import urlsplit
 
-from .verification_dns import ACTEUR_DNS, entree_lot, rapprocher_dns
+from .verification_account56 import ACTEUR_VERIFICATION, entree_lot, plafond_lot, rapprocher_verification
 
 
 def candidats(profil):
@@ -59,6 +59,7 @@ def verifier(fournisseur, base, cle, selection):
     for debut in range(0, len(adresses), 5000):
         lot = adresses[debut:debut + 5000]
         identifiant = sha256("\n".join(lot).encode()).hexdigest()
-        lignes = fournisseur.lignes(base, cle + ":dns:" + identifiant, ACTEUR_DNS, entree_lot(lot))
-        resultats.update(rapprocher_dns(lot, lignes))
+        lignes = fournisseur.lignes(base, cle + ":account56:" + identifiant, ACTEUR_VERIFICATION,
+                                     entree_lot(lot), max_total_charge_usd=plafond_lot(len(lot)))
+        resultats.update(rapprocher_verification(lot, lignes))
     return resultats

@@ -45,7 +45,7 @@ Adresse associée à un contact par une source de recherche, en attente de véri
 
 ### Contact admissible
 
-Contact professionnel dont l’adresse est rattachée à l’entreprise par un domaine confirmé ou par une publication officielle. Le contrôle DNS est réalisé par `f0rty7even/email-verifier`. Une preuve de délivrabilité portant sur la boîte exacte reste requise pour l’admission à l’envoi. Un résultat DNS positif seul laisse le dossier en attente.
+Contact professionnel dont l’adresse est rattachée à l’entreprise par un domaine confirmé ou par une publication officielle. L’Actor Apify `account56/email-verifier` doit valider la boîte exacte avec les champs `result=ok`, `quality=good` et `subresult=ok`. Cette preuve est relue avant l’envoi.
 
 Le poste, le nom et le profil LinkedIn personnel sont facultatifs. Une adresse officielle partagée peut servir de point de contact. Si le nom n’est pas confirmé, la rédaction s’adresse à l’entreprise avec une salutation neutre.
 

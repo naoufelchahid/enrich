@@ -2,6 +2,7 @@
 from urllib.parse import urlsplit
 
 from .collecte import url_personnelle
+from .verification_account56 import preuve_acceptee
 
 
 class ImportTwenty:
@@ -18,7 +19,7 @@ class ImportTwenty:
             params["starting_after"] = page["pageInfo"]["endCursor"]
 
     def __call__(self, url, profil, decision, controle):
-        if decision["verdict"] != "correspond" or controle["verdict"] != "accepte":
+        if decision["verdict"] != "correspond" or not preuve_acceptee(controle, decision["email"]):
             raise ValueError("Admission non confirmée")
         identite = url_personnelle(url)
         if not identite or identite != url_personnelle(profil.get("linkedinUrl")):
@@ -62,5 +63,5 @@ class ImportTwenty:
         charge = {"name": {"firstName": profil["firstName"], "lastName": profil["lastName"]},
                   "linkedinLink": {"primaryLinkUrl": identite}, "emails": {"primaryEmail": email},
                   "companyId": entreprise, "jobTitle": poste.get("position"),
-                  "sourceFile": f"HarvestAPI {decision['preuve_employeur']} {decision['domaine']} | BounceVerify valid"}
+                  "sourceFile": f"HarvestAPI {decision['preuve_employeur']} {decision['domaine']} | Account56 ok"}
         return self.api("POST", "people", json=charge)["data"]["createPerson"]["id"]

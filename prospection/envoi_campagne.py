@@ -9,8 +9,8 @@ from langgraph.graph import END, START, StateGraph
 
 from .crm_campagnes import AFFECTATIONS, EXPEDITIONS, charger_json
 from .graphe import PATTERN, empreinte, simuler
-from .qualification_kerix import BOUNCE, ZAIQ, normaliser_verdict
 from .transport import envoyer
+from .verification_account56 import preuve_acceptee
 
 
 class Etat(TypedDict, total=False):
@@ -23,29 +23,17 @@ class Etat(TypedDict, total=False):
     resultat: dict
 
 
-def adresse_admise(personne, *, preuve_apify_exigee=False):
+def adresse_admise(personne):
     dossier = charger_json(personne.get("prospectingDossier")) or {}
     adresse = dossier.get("adresse_admise")
     verifications = dossier.get("verifications") or []
     decision = dossier.get("decision_finale", {})
     if (not adresse or decision.get("verdict") != "admis" or decision.get("email") != adresse
-            or not verifications or verifications[-1]["verdict"] != "accepte"
-            or verifications[-1].get("adresse") != adresse
+            or not verifications or not preuve_acceptee(verifications[-1], adresse)
             or ((personne.get("emails") or {}).get("primaryEmail") or "").casefold() != adresse
             or personne.get("companyId") != dossier.get("entreprise", {}).get("twenty_id")
             or personne.get("prospectingUnsubscribed") is True):
         return None
-    # Les contrôles DNS seuls ne remplacent pas une preuve SMTP déjà enregistrée.
-    if preuve_apify_exigee or dossier.get("mode_verification") == "apify":
-        preuve = verifications[-1]
-        fournisseur = preuve.get("fournisseur")
-        brut = preuve.get("brut") or {}
-        publique = (dossier.get("fournisseur") == "Site officiel"
-                    and any(p.get("email") == adresse for p in (dossier.get("provenance") or {}).get("sources", [])))
-        if (fournisseur not in {BOUNCE, ZAIQ}
-                or str(brut.get("email") or "").strip().casefold() != adresse
-                or normaliser_verdict(fournisseur, brut, boite_officielle=publique) != "accepte"):
-            return None
     return adresse
 
 
@@ -95,7 +83,7 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
             if erreur.code == 404:
                 return None
             raise
-        adresse = adresse_admise(personne, preuve_apify_exigee=not etat.get("boite_test"))
+        adresse = adresse_admise(personne)
         if (not adresse or adresse != approuve["adresse"] or affectation["contactId"] != approuve["contact"]
                 or empreinte(charger_json(personne["prospectingDossier"])) != approuve["dossier"]
                 or (charger_json(affectation.get("draftJson")) or {}).get("empreinte") != approuve["empreinte"]):
