@@ -25,9 +25,9 @@ TARIFS = {
 }
 
 
-def cout(acteur, volume):
+def cout(acteur, volume, demarrages=1):
     demarrage, unitaire = map(montant, TARIFS[acteur])
-    return demarrage + volume * unitaire if volume else Decimal(0)
+    return demarrages * demarrage + volume * unitaire if volume else Decimal(0)
 
 
 class Etat(TypedDict, total=False):
@@ -63,10 +63,10 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
         couvertes = {p["entreprise"]["ice"] for p in etat["admis"]}
         return [e for e in etat["entreprises"] if e["ice"] not in couvertes]
 
-    def chercher(etat, acteur, fournisseur, entree, entreprises, volume, personnes=None):
+    def chercher(etat, acteur, fournisseur, entree, entreprises, volume, personnes=None, *, demarrages=1):
         try:
             lignes, provenance = budget.lignes(
-                acteur, entree, cout(acteur, volume),
+                acteur, entree, cout(acteur, volume, demarrages),
                 verification=cout(BOUNCE, volume) + (cout(ZAIQ, volume) if zaiq else 0),
                 max_items=volume,
             )
@@ -192,10 +192,10 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
         volume = len(entreprises) * 4
         return chercher(etat, EFFECTIFS, "Harvest effectifs", {
             "companies": sorted({page_entreprise(e["linkedin"]) for e in entreprises}),
-            "maxItems": volume, "maxItemsPerCompany": 4,
+            "maxItems": volume, "maxItemsPerCompany": 4, "companyBatchMode": "one_by_one",
             "jobTitles": [titre for variantes in TITRES.values() for titre in variantes],
             "profileScraperMode": "Full + email search ($12 per 1k)",
-        }, entreprises, volume)
+        }, entreprises, volume, demarrages=len(entreprises))
 
     def bilan(etat):
         couts = budget.bilan()
