@@ -123,7 +123,7 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
             charge["objet"] = "[Pilote] " + charge["objet"]
         suivi = {"etat": "incertain", "campagne": reference, "contact": approuve["contact"],
                  "affectation": identifiant, "approbation": marque, "test": bool(boite),
-                 "date": horloge().isoformat()}
+                 "date": horloge().isoformat(), "charge": charge}
         # La contrainte unique Twenty fait de la création le point de réservation.
         try:
             reservation, = crm.lots(EXPEDITIONS, [{
