@@ -47,15 +47,22 @@ class Apify:
             with base:
                 base.execute("INSERT INTO runs VALUES (?,?,?)",
                              (cle, run["id"], run["defaultDatasetId"]))
+        run = self.attendre(run)
+        if run["status"] != "SUCCEEDED":
+            raise RuntimeError(f"Run {run['id']} : {run['status']}")
+        yield from self.dataset(run["defaultDatasetId"])
+
+    def attendre(self, run):
         while run["status"] in {"READY", "RUNNING", "TIMING-OUT", "ABORTING"}:
             time.sleep(5)
             run = self.appeler("actor-runs/" + run["id"])["data"]
-        if run["status"] != "SUCCEEDED":
-            raise RuntimeError(f"Run {run['id']} : {run['status']}")
+        return run
+
+    def dataset(self, identifiant):
         offset = 0
         while True:
             params = urlencode({"offset": offset, "limit": 250, "format": "json"})
-            page = self.appeler(f"datasets/{run['defaultDatasetId']}/items?{params}")
+            page = self.appeler(f"datasets/{identifiant}/items?{params}")
             if not page:
                 return
             yield from page

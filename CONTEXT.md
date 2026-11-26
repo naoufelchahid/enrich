@@ -16,3 +16,47 @@
     * *Failure handling*: If SMTP fails, the record is marked as `Failed` with the error message attached (no automatic retry).
     * *Tracking*: No open/click tracking is implemented in V1 to protect deliverability.
 *   **Workspace Variables**: Secure configuration fields defined by the App (e.g., SMTP credentials, LinkedIn API key) that you manage directly in the Twenty UI.
+
+# Acquisition d’entreprises par rubrique
+
+Le parcours d’acquisition part d’une rubrique Kerix, enregistre les entreprises dans le CRM et recherche des contacts au sein de ces entreprises.
+
+## Vocabulaire
+
+### Rubrique Kerix
+
+Catégorie principale du répertoire Kerix choisie comme point de départ d’une acquisition. Elle peut regrouper plusieurs sous-rubriques d’activité.
+
+### Entreprise de la rubrique
+
+Entreprise dont la fiche apparaît dans les résultats de la rubrique. Une même entreprise peut apparaître dans plusieurs rubriques.
+
+### Entreprise importable
+
+Entreprise de la rubrique dont la fiche Kerix renseigne l’ICE. Le site web est facultatif.
+
+### Adresse candidate
+
+Adresse associée à un contact par une source de recherche, en attente de vérification de délivrabilité.
+
+### Vérification de délivrabilité
+
+Évaluation datée d’une adresse précise par un vérificateur, avec un résultat et une provenance.
+
+### Contact admissible
+
+Dirigeant ou directeur dont le profil LinkedIn personnel est identifié, dont le poste actuel dans l’entreprise ciblée est confirmé et dont l’adresse professionnelle nominative, sur le domaine exact de cette entreprise, a reçu un verdict de délivrabilité accepté. Le titre actuel doit correspondre directement à une variante de gérant, de directeur général ou de directeur commercial.
+
+Une seule source suffit pour établir l’identité et le poste actuel si le domaine confirmé ou la page LinkedIn de l’employeur correspond à l’entreprise ciblée.
+
+### Entreprise couverte
+
+Entreprise du lot pour laquelle au moins un contact admissible a été identifié. Le taux de couverture du pilote se calcule sur les 30 entreprises sélectionnées.
+
+### Référence de campagne
+
+Identifiant qui rattache un contact à une campagne et permet de retrouver les destinataires lors du lancement de la rédaction et de l’envoi.
+
+### Affectation à une campagne
+
+Lien entre une fiche contact et une campagne. Une personne peut avoir plusieurs affectations actives. Chacune porte le suivi des envois de la campagne correspondante.

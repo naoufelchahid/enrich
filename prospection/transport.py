@@ -43,7 +43,9 @@ def envoyer(charge):
                 preuve=json.loads(bloc["text"])
             except ValueError:
                 continue
-            if isinstance(preuve,dict) and (preuve.get("success") is True or preuve.get("messageId")):
+            if (isinstance(preuve, dict) and not preuve.get("error")
+                    and (preuve.get("messageId") or (preuve.get("success") is True
+                         and preuve.get("message") == "Message sent"))):
                 return preuve
     return None
 
