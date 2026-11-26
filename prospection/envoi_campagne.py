@@ -38,7 +38,10 @@ def adresse_admise(personne, *, preuve_apify_exigee=False):
     if preuve_apify_exigee or dossier.get("mode_verification") == "apify":
         preuve = verifications[-1]
         fournisseur = preuve.get("fournisseur")
-        if fournisseur not in {BOUNCE, ZAIQ} or normaliser_verdict(fournisseur, preuve.get("brut")) != "accepte":
+        brut = preuve.get("brut") or {}
+        if (fournisseur not in {BOUNCE, ZAIQ}
+                or str(brut.get("email") or "").strip().casefold() != adresse
+                or normaliser_verdict(fournisseur, brut) != "accepte"):
             return None
     return adresse
 

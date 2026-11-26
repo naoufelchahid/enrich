@@ -375,5 +375,9 @@ def test_cascade_elargie_retient_poste_libre_et_bloque_une_adresse_a_risque(monk
         p = crm.record("people", d["twenty_id"])
         assert adresse_admise(p) == d["adresse_admise"]
         dossier = json.loads(p["prospectingDossier"])
-        dossier["verifications"][-1]["brut"]["is_catch_all"] = True
+        brut = dossier["verifications"][-1]["brut"]
+        assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) == d["adresse_admise"]
+        brut["email"] = "autre@example.invalid"
+        assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None
+        brut.update(email=d["adresse_admise"], is_catch_all=True)
         assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None
