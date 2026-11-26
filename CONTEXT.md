@@ -45,9 +45,9 @@ Adresse associée à un contact par une source de recherche, en attente de véri
 
 ### Contact admissible
 
-Dirigeant ou directeur dont le profil LinkedIn personnel est identifié, dont le poste actuel dans l’entreprise ciblée est confirmé et dont l’adresse professionnelle nominative, sur le domaine exact de cette entreprise, a reçu un verdict de délivrabilité accepté. Le titre actuel doit correspondre directement à une variante de gérant, de directeur général ou de directeur commercial.
+Contact professionnel dont l’adresse est rattachée à l’entreprise par un domaine confirmé ou par une publication officielle. La délivrabilité de l’adresse exacte doit être confirmée par BounceVerify ou, après un timeout explicite, par Zaiq. Une adresse à risque reste en attente ou est écartée selon son verdict.
 
-Une seule source suffit pour établir l’identité et le poste actuel si le domaine confirmé ou la page LinkedIn de l’employeur correspond à l’entreprise ciblée.
+Le poste, le nom et le profil LinkedIn personnel sont facultatifs. Une adresse officielle partagée peut servir de point de contact. Si le nom n’est pas confirmé, la rédaction s’adresse à l’entreprise avec une salutation neutre.
 
 ### Entreprise couverte
 
