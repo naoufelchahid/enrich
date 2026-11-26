@@ -39,9 +39,11 @@ def adresse_admise(personne, *, preuve_apify_exigee=False):
         preuve = verifications[-1]
         fournisseur = preuve.get("fournisseur")
         brut = preuve.get("brut") or {}
+        publique = (dossier.get("fournisseur") == "Site officiel"
+                    and any(p.get("email") == adresse for p in (dossier.get("provenance") or {}).get("sources", [])))
         if (fournisseur not in {BOUNCE, ZAIQ}
                 or str(brut.get("email") or "").strip().casefold() != adresse
-                or normaliser_verdict(fournisseur, brut) != "accepte"):
+                or normaliser_verdict(fournisseur, brut, boite_officielle=publique) != "accepte"):
             return None
     return adresse
 

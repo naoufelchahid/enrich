@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from .collecte import url_personnelle
 from .identite_serp import EMAIL, SERP, coordonnees_site, entree_serp, resoudre
-from .qualification_kerix import BOUNCE, ZAIQ, controle
+from .qualification_kerix import BOUNCE, ZAIQ, controle, normaliser_verdict
 from .recherche_dirigeants import adresses, domaine, fonction, normaliser, page_entreprise, postes, premier
 
 
@@ -156,6 +156,13 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, zaiq, act
                 if index < len(options):
                     a, c = options[index]
                     choisies[a] = c
+        officielles = {a for a, c in choisies.items() if c["fournisseur"] == "Site officiel"}
+        for a in choisies.keys() & controles.keys():
+            vv = controles[a]
+            controles[a] = [
+                {**v, "verdict": normaliser_verdict(v["fournisseur"], v["brut"], boite_officielle=a in officielles)}
+                if isinstance(v.get("brut"), dict) else v for v in vv
+            ]
         a_verifier = [a for a in choisies if a not in controles]
         solde = budget.solde()
         limite = min(100, int(max(Decimal(0), solde - Decimal("0.02")) / Decimal("0.003")))
@@ -163,11 +170,15 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, zaiq, act
         if lot:
             maximum = Decimal("0.01") + len(lot) * Decimal("0.002")
             reserve = Decimal("0.01") + len(lot) * Decimal("0.001") if zaiq else Decimal(0)
-            primaires = controle(budget, BOUNCE, lot, maximum, reserve=reserve)
-            timeouts = sorted(a for a, v in primaires.items() if v["verdict"] == "timeout")
-            recours = controle(budget, ZAIQ, timeouts, reserve) if timeouts and zaiq else {}
-            for a, v in primaires.items():
-                controles[a] = [v, recours[a]] if a in recours else [v]
+            primaires = controle(budget, BOUNCE, lot, maximum, reserve=reserve, officielles=officielles)
+            controles.update({a: [v] for a, v in primaires.items()})
+        timeouts = sorted(a for a in choisies if a in controles and len(controles[a]) == 1
+                          and controles[a][0]["verdict"] == "timeout")
+        if timeouts and zaiq:
+            plafond = Decimal("0.01") + len(timeouts) * Decimal("0.001")
+            recours = controle(budget, ZAIQ, timeouts, plafond, officielles=officielles)
+            for a, v in recours.items():
+                controles[a] = [*controles[a], v]
         nouveaux, attentes = [], []
         for a, c in choisies.items():
             ice = c["entreprise"]["ice"]

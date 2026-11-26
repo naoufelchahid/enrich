@@ -381,3 +381,14 @@ def test_cascade_elargie_retient_poste_libre_et_bloque_une_adresse_a_risque(monk
         assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None
         brut.update(email=d["adresse_admise"], is_catch_all=True)
         assert adresse_admise({**p, "prospectingDossier": json.dumps(dossier)}) is None
+
+
+
+def test_bounceverify_distinction_delai_smtp_et_adresse_officielle_hebergee():
+    delai = {"status": "unknown", "smtp_valid": None, "reason": "SMTP connection to mx.exemple.ma:25 timed out"}
+    assert normaliser_verdict(BOUNCE, delai) == "timeout"
+    assert normaliser_verdict(BOUNCE, {**delai, "reason": "SMTP verification exceeded time budget"}) == "timeout"
+    fixe = {**bounce_ok("accueil@gmail.com"), "is_free_provider": True}
+    assert normaliser_verdict(BOUNCE, fixe) == "rejete"
+    assert normaliser_verdict(BOUNCE, fixe, boite_officielle=True) == "accepte"
+    assert normaliser_verdict(BOUNCE, {**fixe, "status": "risky"}, boite_officielle=True) == "rejete"

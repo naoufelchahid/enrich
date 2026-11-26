@@ -53,12 +53,15 @@ def qualifier(dossier, etape):
                     browsentic=etape == "initial")
 
 
-def normaliser_verdict(acteur, brut):
+def normaliser_verdict(acteur, brut, *, boite_officielle=False):
     if brut is None:
         return "manquant"
     statut = str(brut.get("status") or brut.get("verdict") or "").casefold()
-    risques = ("is_catch_all", "is_disposable", "is_role_based", "is_free_provider")
-    risques_zaiq = ("isCatchAll", "isDisposable", "isRoleAddress", "isFreeProvider")
+    risques = ("is_catch_all", "is_disposable", "is_role_based")
+    risques_zaiq = ("isCatchAll", "isDisposable", "isRoleAddress")
+    if not boite_officielle:
+        risques += ("is_free_provider",)
+        risques_zaiq += ("isFreeProvider",)
     if (statut in {"catch_all", "catch-all", "risky", "undeliverable", "invalid"}
             or any(brut.get(k) is True for k in (*risques, *risques_zaiq))):
         return "rejete"
@@ -66,7 +69,9 @@ def normaliser_verdict(acteur, brut):
         codes = {"timeout", "smtp_timeout", "connection_timeout"}
         motifs = {str(brut.get(k) or "").strip().casefold().replace(" ", "_")
                   for k in ("error_code", "reason", "reasonCode")}
-        if statut in codes or codes & motifs:
+        raison = str(brut.get("reason") or "").strip().casefold()
+        delai_smtp = re.fullmatch(r"smtp (?:connection to \S+ timed out|verification exceeded time budget)[.!]?", raison)
+        if statut in codes or codes & motifs or delai_smtp:
             return "timeout"
         risque = str(brut.get("risk_type") or "").strip().casefold()
         if (statut == "valid" and brut.get("smtp_valid") is True and risque in {"", "none"}
@@ -78,7 +83,7 @@ def normaliser_verdict(acteur, brut):
     return "inconnu"
 
 
-def controle(budget, acteur, lot, plafond, *, reserve=0):
+def controle(budget, acteur, lot, plafond, *, reserve=0, officielles=()):
     instant = datetime.now(timezone.utc).isoformat()
     recus, provenance = {}, None
     entree = {"emails": lot}
@@ -100,7 +105,7 @@ def controle(budget, acteur, lot, plafond, *, reserve=0):
     for adresse in lot:
         lignes = recus.get(adresse, [])
         brut = lignes[0] if len(lignes) == 1 else lignes or None
-        verdict = etat or ("reponse_ambigue" if len(lignes) > 1 else normaliser_verdict(acteur, brut))
+        verdict = etat or ("reponse_ambigue" if len(lignes) > 1 else normaliser_verdict(acteur, brut, boite_officielle=adresse in officielles))
         resultats[adresse] = {"fournisseur": acteur, "date": ((brut.get("checkedAt") or brut.get("verified_at")) if isinstance(brut, dict) else None)
                               or (provenance or {}).get("date") or instant,
                               "adresse": adresse, "provenance": provenance, "verdict": verdict, "brut": brut}
