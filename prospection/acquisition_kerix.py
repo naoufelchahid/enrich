@@ -133,10 +133,12 @@ def graphe_acquisition(kerix, crm, budget, juger=qualifier, *, harvest_profils=T
             verdict = d["verifications"][-1]["verdict"]
             d["adresse_admise"] = adresse if verdict == "accepte" else ""
             d["decision_finale"] = q = avis(d, "final")
+            preuve_identite = d["entreprise"].get("preuve_identite")
             d["preuves"] = [
                 {"url": d["entreprise"]["kerix"], "extrait": "ICE " + d["entreprise"]["ice"]},
                 {"url": d["linkedin"], "extrait": d["poste"]["titre"], "origine": d["provenance"],
                  "pointeur": d["poste"]["pointeur"]},
+                *([preuve_identite] if preuve_identite else []),
                 *(s for decision in (d["decision_initiale"], q) for s in decision.get("sources", [])
                   if urlsplit(s["url"]).scheme in {"https", "http"} and urlsplit(s["url"]).hostname
                   and s["extrait"].strip()),

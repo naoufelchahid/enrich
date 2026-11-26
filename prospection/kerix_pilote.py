@@ -1,5 +1,6 @@
 """Exécuter le pilote Kerix et lancer séparément le graphe de campagne."""
 import argparse
+import fcntl
 import json
 import os
 import sqlite3
@@ -12,6 +13,7 @@ from .crm_campagnes import CAMPAGNES, Twenty, reference_valide
 from .envoi_campagne import graphe_campagne
 from .kerix import Kerix, tirer
 from .schema_kerix import installer
+from .recherche_dirigeants import domaine, page_entreprise
 
 
 def lire(path):
@@ -23,11 +25,41 @@ def archive(path, contenu):
         json.dump(contenu, f, ensure_ascii=False, indent=2)
 
 
+def confirmer_identites(fiches, identites):
+    """Joindre des preuves revues à des entreprises issues du tirage Kerix."""
+    par_ice = {f["ice"] for f in fiches.values() if f["ice"]}
+    if set(identites) - par_ice:
+        raise ValueError("Preuve fournie pour une entreprise hors tirage")
+    mises_a_jour = {}
+    for url, fiche in fiches.items():
+        preuve = identites.get(fiche["ice"])
+        if not preuve:
+            mises_a_jour[url] = fiche
+            continue
+        if not preuve.get("extrait", "").strip() or not domaine(preuve.get("url")):
+            raise ValueError("Chaque identité confirmée doit avoir une source et un extrait")
+        site = preuve.get("site") or fiche["site"]
+        linkedin = preuve.get("linkedin") or fiche["linkedin"]
+        if (site and not domaine(site)) or (linkedin and not page_entreprise(linkedin)):
+            raise ValueError("Domaine ou page LinkedIn d’entreprise invalide")
+        if (fiche["site"] and domaine(fiche["site"]) != domaine(site)
+                or fiche["linkedin"] and page_entreprise(fiche["linkedin"]) != page_entreprise(linkedin)):
+            raise ValueError("Identité confirmée en conflit avec la fiche Kerix")
+        mises_a_jour[url] = {**fiche, "site": site, "linkedin": linkedin, "preuve_identite": preuve}
+    return mises_a_jour
+
+
 def acquerir(args, crm):
+    args.repertoire.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with (args.repertoire / "acquisition.lock").open("a") as fichier:
+        fcntl.flock(fichier, fcntl.LOCK_EX)
+        return _acquerir(args, crm)
+
+
+def _acquerir(args, crm):
     configuration = lire(args.configuration)
     reference_valide(configuration["campagne"])
     repertoire = args.repertoire
-    repertoire.mkdir(mode=0o700, parents=True, exist_ok=True)
     instantane = repertoire / "source.json"
     etat = {k: configuration[k] for k in ("rubrique", "taille", "graine", "campagne")}
     etat["rubrique"] = str(etat["rubrique"])
@@ -50,6 +82,8 @@ def acquerir(args, crm):
     else:
         fiches = {url: kerix.fiche(url) for url in tirer(etat["source"], etat["taille"], etat["graine"])}
         archive(chemin_fiches, fiches)
+    if args.identites:
+        fiches = confirmer_identites(fiches, lire(args.identites))
     with sqlite3.connect(repertoire / "budget.sqlite") as db:
         budget = Budget(db, Apify(os.environ["APIFY_TOKEN"]), configuration["plafond_usd"])
         graphe = graphe_acquisition(kerix, crm, budget, fiche=fiches.__getitem__,
@@ -69,6 +103,7 @@ def main():
     acquisition = commandes.add_parser("acquerir")
     acquisition.add_argument("configuration", type=Path)
     acquisition.add_argument("repertoire", type=Path)
+    acquisition.add_argument("--identites", type=Path, help="Preuves d’identité revues, indexées par ICE")
     commandes.add_parser("rediger").add_argument("campagne")
     envoi = commandes.add_parser("envoyer")
     envoi.add_argument("campagne")

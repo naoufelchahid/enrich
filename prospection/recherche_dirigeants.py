@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from .collecte import url_personnelle
 
-VERSION_TITRES = "1"
+VERSION_TITRES = "2"
 TITRES = {
     "gerance": ("gérant", "gérant associé", "associé gérant", "co-gérant", "manager statutaire",
                 "gérante", "gérante associée", "associée gérante", "co-gérante", "مسير", "مسيرة"),
@@ -13,7 +13,9 @@ TITRES = {
                           "directrice générale déléguée", "président directeur général",
                           "présidente directrice générale", "DG", "PDG", "CEO", "chief executive officer",
                           "managing director", "general director", "directeur général et cofondateur",
-                          "directrice générale et cofondatrice", "المدير العام", "المديرة العامة"),
+                          "directrice générale et cofondatrice", "Founder & CEO", "CEO & Founder",
+                          "Founder and CEO", "Co-founder & CEO", "CEO & Co-founder",
+                          "Managing Director & Founder", "المدير العام", "المديرة العامة"),
     "direction_commerciale": ("directeur commercial", "directrice commerciale", "directeur des ventes",
                               "directrice des ventes", "sales director", "commercial director",
                               "chief commercial officer", "directeur commercial et marketing",

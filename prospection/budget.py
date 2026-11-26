@@ -64,9 +64,13 @@ class Budget:
         if precedent:
             run = self.apify.appeler("actor-runs/" + precedent[0])["data"]
         else:
-            data = self.apify.appeler("acts/" + acteur)["data"]
-            modeles = data["pricingInfos"]
-            modele = modeles[-1]["pricingModel"]
+            try:
+                data = self.apify.appeler("acts/" + acteur)["data"]
+                modeles = data["pricingInfos"]
+                modele = modeles[-1]["pricingModel"]
+            except (OSError, KeyError, IndexError):
+                self.annuler(cle)
+                raise
             params = {"timeout": 600}
             if modele == "PAY_PER_EVENT":
                 params["maxTotalChargeUsd"] = str(maximum)
@@ -85,10 +89,10 @@ class Budget:
         montant_confirme = run.get("usageTotalUsd")
         if montant_confirme is not None:
             depense = montant(montant_confirme)
-            if depense > maximum:
-                raise RuntimeError(f"Facturation supérieure au plafond demandé pour {acteur}")
             with self.db:
                 self.db.execute("UPDATE budget_runs SET depense=? WHERE cle=?", (str(depense), cle))
+            if depense > maximum:
+                raise BudgetInsuffisant(f"Facturation supérieure au plafond demandé pour {acteur}")
         if run["status"] != "SUCCEEDED":
             raise RuntimeError(f"Lot {acteur} terminé avec le statut {run['status']}")
         dataset = run["defaultDatasetId"]

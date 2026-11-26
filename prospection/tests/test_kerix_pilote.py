@@ -10,6 +10,8 @@ from prospection.budget import Budget, BudgetInsuffisant
 from prospection.crm_campagnes import AFFECTATIONS, CAMPAGNES, EXPEDITIONS, Twenty
 from prospection.envoi_campagne import graphe_campagne
 from prospection.kerix import RUBRIQUES, Kerix, tirer
+from prospection.kerix_pilote import confirmer_identites
+from prospection.recherche_dirigeants import fonction
 from prospection.qualification_kerix import BOUNCE, ZAIQ
 
 
@@ -257,3 +259,19 @@ def test_redaction_fige_les_contacts_et_suit_a_sans_toucher_b():
     assert reimporte["affectation_id"] == a1["affectation_id"] != b1["affectation_id"]
     assert len(list(crm.lignes(EXPEDITIONS, filter="campaignRef[eq]:A"))) == 1
     assert list(crm.lignes(EXPEDITIONS, filter="campaignRef[eq]:B")) == []
+
+
+def test_identite_revue_ne_change_ni_les_fiches_ni_les_adresses_candidates():
+    f = fiche("a", "000000000000001")
+    source = {f["kerix"]: f}
+    preuve = {"site": "https://a.example", "url": "https://a.example/coordonnees",
+              "extrait": "Entreprise A, Casablanca"}
+    avec_identite = confirmer_identites(source, {f["ice"]: preuve})
+    assert avec_identite[f["kerix"]]["preuve_identite"] == preuve
+    assert avec_identite[f["kerix"]]["site"] == "https://a.example"
+    assert source[f["kerix"]]["site"] == ""
+    with pytest.raises(ValueError, match="hors tirage"):
+        confirmer_identites(source, {"000000000000002": preuve})
+    assert fonction("Founder & CEO") == "direction_generale"
+    assert fonction("Assistant to CEO") is None
+    assert fonction("Ancienne directrice générale") is None
