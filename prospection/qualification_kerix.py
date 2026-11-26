@@ -58,18 +58,20 @@ def normaliser_verdict(acteur, brut):
         return "manquant"
     statut = str(brut.get("status") or brut.get("verdict") or "").casefold()
     risques = ("is_catch_all", "is_disposable", "is_role_based", "is_free_provider")
-    variantes = ("catchAll", "disposable", "role", "free", "roleBased", "freeProvider", "catch_all", "role_based")
-    flags = brut.get("flags") if isinstance(brut.get("flags"), dict) else {}
+    risques_zaiq = ("isCatchAll", "isDisposable", "isRoleAddress", "isFreeProvider")
     if (statut in {"catch_all", "catch-all", "risky", "undeliverable", "invalid"}
-            or any(brut.get(k) is True or flags.get(k) is True for k in (*risques, *variantes))):
+            or any(brut.get(k) is True for k in (*risques, *risques_zaiq))):
         return "rejete"
     if acteur == BOUNCE:
-        if statut == "timeout" or brut.get("error_code") == "timeout" or brut.get("reason") in (
-                "timeout", "smtp_timeout", "connection_timeout"):
+        codes = {"timeout", "smtp_timeout", "connection_timeout"}
+        motifs = {str(brut.get(k) or "").strip().casefold().replace(" ", "_")
+                  for k in ("error_code", "reason", "reasonCode")}
+        if statut in codes or codes & motifs:
             return "timeout"
         if statut == "valid" and brut.get("smtp_valid") is True and all(brut.get(k) is False for k in risques):
             return "accepte"
-    if acteur == ZAIQ and statut == "deliverable":
+    if (acteur == ZAIQ and statut == "deliverable" and brut.get("safeToSend") is True
+            and all(brut.get(k) is False for k in risques_zaiq)):
         return "accepte"
     return "inconnu"
 
@@ -97,6 +99,7 @@ def controle(budget, acteur, lot, plafond, *, reserve=0):
         lignes = recus.get(adresse, [])
         brut = lignes[0] if len(lignes) == 1 else lignes or None
         verdict = etat or ("reponse_ambigue" if len(lignes) > 1 else normaliser_verdict(acteur, brut))
-        resultats[adresse] = {"fournisseur": acteur, "date": (provenance or {}).get("date") or instant,
+        resultats[adresse] = {"fournisseur": acteur, "date": ((brut.get("checkedAt") or brut.get("verified_at")) if isinstance(brut, dict) else None)
+                              or (provenance or {}).get("date") or instant,
                               "adresse": adresse, "provenance": provenance, "verdict": verdict, "brut": brut}
     return resultats

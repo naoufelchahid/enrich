@@ -12,7 +12,7 @@ from prospection.envoi_campagne import graphe_campagne
 from prospection.kerix import RUBRIQUES, Kerix, tirer
 from prospection.kerix_pilote import confirmer_identites
 from prospection.recherche_dirigeants import fonction
-from prospection.qualification_kerix import BOUNCE, ZAIQ
+from prospection.qualification_kerix import BOUNCE, ZAIQ, normaliser_verdict
 
 
 class API:
@@ -152,7 +152,8 @@ def test_acquisition_admet_et_regroupe_les_recours():
                     {"email": mail, "status": "invalid"} if mail == "luc@f.example" else bounce_ok(mail)
                     for mail in reversed(entree["emails"])]
         assert acteur == ZAIQ
-        return [{"email": "tom@b.example", "status": "deliverable", "flags": {}},
+        return [{"email": "tom@b.example", "status": "deliverable", "safeToSend": True,
+                 "isCatchAll": False, "isDisposable": False, "isRoleAddress": False, "isFreeProvider": False},
                 {"email": "theo@c.example", "status": "unknown"}]
 
     fiches = {x["kerix"]: x for x in (a, b, c, d, e, f)}
@@ -275,3 +276,16 @@ def test_identite_revue_ne_change_ni_les_fiches_ni_les_adresses_candidates():
     assert fonction("Founder & CEO") == "direction_generale"
     assert fonction("Assistant to CEO") is None
     assert fonction("Ancienne directrice générale") is None
+
+
+
+def test_verdicts_zaiq_et_timeout_explicite():
+    valide = {"status": "deliverable", "safeToSend": True, "isCatchAll": False,
+              "isDisposable": False, "isRoleAddress": False, "isFreeProvider": False}
+    assert normaliser_verdict(ZAIQ, valide) == "accepte"
+    assert normaliser_verdict(ZAIQ, {**valide, "isCatchAll": True}) == "rejete"
+    assert normaliser_verdict(ZAIQ, {**valide, "safeToSend": False}) == "inconnu"
+    assert normaliser_verdict(BOUNCE, {"status": "unknown"}) == "inconnu"
+    assert normaliser_verdict(BOUNCE, {"status": "unknown", "reason": "SMTP timeout"}) == "timeout"
+    assert normaliser_verdict(BOUNCE, {"status": "timeout", "is_catch_all": True}) == "rejete"
+    assert normaliser_verdict(BOUNCE, None) == "manquant"
