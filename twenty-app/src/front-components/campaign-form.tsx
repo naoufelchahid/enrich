@@ -212,7 +212,7 @@ export function CampaignForm() {
         reference: ref,
         name: ref,
         briefJson: JSON.stringify(brief),
-        demandeRedaction: lancer ? crypto.randomUUID() : '',
+        demandeRedaction: lancer ? (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)) : '',
       };
       if (fiche) await api.patch(campagnes + '/' + fiche.id, data);
       else await api.post(campagnes, data);
