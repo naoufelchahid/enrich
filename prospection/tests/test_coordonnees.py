@@ -119,3 +119,31 @@ def test_coordonnees_masquees_dans_un_extrait():
     assert not email_complet("mede...@gmail.com")
     assert telephone_complet("06611875...") is None
     assert telephone_complet("+212 6 66 55 07 72").country_code == 212
+
+
+def test_telephone_refuse_par_twenty_preserve_les_autres_champs():
+    import json
+    from io import BytesIO
+    from urllib.error import HTTPError
+
+    class CRM:
+        fiche = {}
+        tentatives_telephone = 0
+        def record(self, *args):
+            return self.fiche.copy()
+        def modifier(self, *args, **charge):
+            if "phones" in charge:
+                self.tentatives_telephone += 1
+                corps = BytesIO(b'{"code":"CONFLICTING_PHONE_COUNTRY_CODE"}')
+                raise HTTPError("https://crm.test", 400, "Bad request", {}, corps)
+            self.fiche.update(charge)
+
+    crm = CRM()
+    e = {"ice": "1", "twenty_id": "t", "nom": "Exemple"}
+    faits = [fait("telephone", "+212 666550772"), fait("ville", "Rabat")]
+    for _ in range(2):
+        e = completer(crm, e, faits)
+    assert crm.tentatives_telephone == 1
+    assert crm.fiche["address"]["addressCity"] == "Rabat"
+    preuves = json.loads(crm.fiche["kerixDossier"])["coordonnees_documentees"]
+    assert any(p.get("incident") == "CONFLICTING_PHONE_COUNTRY_CODE" for p in preuves)

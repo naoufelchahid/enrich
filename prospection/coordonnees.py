@@ -1,5 +1,6 @@
 """Conserver les preuves et compléter les champs manquants de l’entreprise."""
 import json
+from urllib.error import HTTPError
 
 import phonenumbers
 
@@ -47,7 +48,10 @@ def completer(crm, e, faits):
             adresse[cle] = valeurs[champ]
             charge["address"] = adresse
     tel = fiche.get("phones") or {}
-    if valeurs.get("telephone") and not tel.get("primaryPhoneNumber"):
+    telephone = valeurs.get("telephone")
+    deja_refuse = any(f.get("origine") == "Twenty" and f.get("telephone") == telephone
+                      and f.get("incident") for f in preuves)
+    if telephone and not tel.get("primaryPhoneNumber") and not deja_refuse:
         numero = telephone_complet(valeurs["telephone"])
         charge["phones"] = {**tel, "primaryPhoneNumber": phonenumbers.national_significant_number(numero),
                             "primaryPhoneCountryCode": phonenumbers.region_code_for_number(numero) or "",
@@ -57,7 +61,21 @@ def completer(crm, e, faits):
     if entreprise != dossier:
         charge["kerixDossier"] = json.dumps(entreprise, ensure_ascii=False)
     if charge:
-        crm.modifier("companies", e["twenty_id"], **charge)
+        try:
+            crm.modifier("companies", e["twenty_id"], **charge)
+        except HTTPError as erreur:
+            if erreur.code != 400 or "phones" not in charge:
+                raise
+            try:
+                code = json.loads(erreur.read()).get("code")
+            except ValueError:
+                raise erreur
+            if code not in {"INVALID_PHONE_NUMBER", "CONFLICTING_PHONE_COUNTRY_CODE"}:
+                raise
+            preuves.append({"origine": "Twenty", "incident": code, "telephone": telephone})
+            charge.pop("phones")
+            charge["kerixDossier"] = json.dumps(entreprise, ensure_ascii=False)
+            crm.modifier("companies", e["twenty_id"], **charge)
     return entreprise
 
 
