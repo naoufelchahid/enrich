@@ -7,6 +7,7 @@ from urllib.error import HTTPError
 
 from langgraph.graph import END, START, StateGraph
 
+from .angles import choisir, valider
 from .crm_campagnes import AFFECTATIONS, EXPEDITIONS, charger_json
 from .graphe import PATTERN, empreinte, simuler
 from .transport import envoyer
@@ -20,6 +21,7 @@ class Etat(TypedDict, total=False):
     production: bool
     boite_test: str
     selection: list
+    ecartes: list
     brouillons: list
     resultat: dict
 
@@ -38,7 +40,7 @@ def adresse_admise(personne):
     return adresse
 
 
-def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: datetime.now(timezone.utc)):
+def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: datetime.now(timezone.utc), choisir_angle=choisir):
     def selection(etat):
         lignes = [a for a in crm.affectations(etat["campagne"])
                   if a["campaignRef"] == etat["campagne"] and not a.get("withdrawn")]
@@ -51,6 +53,9 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
         briefing = crm.campagne(etat["campagne"])
         if not isinstance(briefing, dict) or not briefing:
             raise ValueError("Brief éditorial absent de Twenty")
+        valider(briefing)
+        version_brief = empreinte(briefing)
+        ecartes = []
         brouillons = []
         for contact, identifiant in etat["selection"]:
             personne = crm.record("people", contact)
@@ -58,21 +63,28 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
             if not adresse:
                 continue
             dossier = charger_json(personne["prospectingDossier"])
-            pattern = briefing.get("structure", PATTERN)
+            angle, motif = choisir_angle(briefing["angles"], dossier)
+            if not angle:
+                ecartes.append({"affectation": identifiant, "motif": motif})
+                crm.modifier(AFFECTATIONS, identifiant, draftJson=json.dumps({"motif": motif}))
+                continue
+            pattern = briefing.get("structure", PATTERN) + " Suis l’angle retenu et sa technique. Formule une seule demande."
+            brief_cible = {**briefing, "angles": [angle]}
             if dossier.get("nom_confirme") is False:
                 pattern += ("\nUtilise une salutation neutre, par exemple Bonjour. "
                             "Adresse-toi à l’entreprise sans citer de nom ni de poste individuel.")
-            resultat = ecrire({"profil": dossier, "brief": briefing, "pattern": pattern,
+            resultat = ecrire({"profil": dossier, "brief": brief_cible, "pattern": pattern,
                                "twenty_id": contact, "campagne": etat["campagne"],
                                "identite": dossier.get("linkedin") or adresse, "qualification": dossier["decision_initiale"],
                                "verification": dossier["verifications"][-1]})
             charge = {"campagne": etat["campagne"], "affectation": identifiant, "contact": contact,
                       "adresse": adresse, "version": resultat["version"], "revue": resultat["revue"],
                       "brouillon": resultat.get("brouillon"), "dossier": empreinte(dossier)}
+            charge.update(angle=angle, version_brief=version_brief)
             charge["empreinte"] = empreinte(charge)
             crm.modifier(AFFECTATIONS, identifiant, draftJson=json.dumps(charge, ensure_ascii=False))
             brouillons.append(charge)
-        return {"brouillons": brouillons}
+        return {"brouillons": brouillons, "ecartes": ecartes}
 
     def relecture_crm(etat, approuve):
         try:
@@ -84,6 +96,8 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
             if erreur.code == 404:
                 return None
             raise
+        if approuve.get("version_brief") != empreinte(crm.campagne(etat["campagne"])):
+            return None
         adresse = adresse_admise(personne)
         if (not adresse or adresse != approuve["adresse"] or affectation["contactId"] != approuve["contact"]
                 or empreinte(charger_json(personne["prospectingDossier"])) != approuve["dossier"]
@@ -109,6 +123,8 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
                 return {"resultat": {"etat": "ecarte", "motif": "Affectation introuvable"}}
             raise
         approuve = charger_json(affectation.get("draftJson")) or {}
+        if not approuve.get("version_brief") or approuve["version_brief"] != empreinte(crm.campagne(reference)):
+            return {"resultat": {"etat": "ecarte", "motif": "À régénérer : brief modifié ou ancien brouillon"}}
         marque = approuve.get("empreinte")
         if (not marque or marque != etat["approbation"]
                 or marque != empreinte({k: v for k, v in approuve.items() if k != "empreinte"})

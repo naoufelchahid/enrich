@@ -7,6 +7,8 @@ import {
   MAIN_PAGE_FRONT_COMPONENT_UNIVERSAL_IDENTIFIER,
 } from 'src/constants/universal-identifiers';
 
+import { CampaignForm } from './campaign-form';
+
 const STANDARD_FIELDS = [
   { key: 'firstName', label: 'First Name' },
   { key: 'lastName', label: 'Last Name' },
@@ -18,6 +20,7 @@ const STANDARD_FIELDS = [
 ];
 
 const MainPage = () => {
+  const [campagne, setCampagne] = useState(true);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -102,6 +105,8 @@ const MainPage = () => {
 
   return (
     <div style={{ padding: '40px', fontFamily: 'Inter, sans-serif' }}>
+      <nav><button onClick={() => setCampagne(true)}>Campagnes</button> <button onClick={() => setCampagne(false)}>Import Excel</button></nav>
+      {campagne ? <CampaignForm/> : <>
       <h1 style={{ fontSize: '24px', marginBottom: '20px' }}>Upload BDD6.xlsx</h1>
 
       {headers.length === 0 ? (
@@ -176,6 +181,7 @@ const MainPage = () => {
           {result}
         </div>
       )}
+      </>}
     </div>
   );
 };

@@ -19,6 +19,8 @@ CHAMPS = {
     ),
     CAMPAGNES: (
         ("reference", "Référence", "TEXT", True),
+        ("demandeRedaction", "Demande de rédaction", "TEXT", False),
+        ("resultatRedaction", "Résultat de rédaction", "TEXT", False),
         ("briefJson", "Brief éditorial JSON", "TEXT", False),
     ),
     AFFECTATIONS: (

@@ -53,3 +53,11 @@ Adresse publiée pour joindre l’entreprise ou un service. Elle sert de recours
 ### Coordonnée documentée
 
 Valeur d’une coordonnée d’entreprise accompagnée d’une source, d’un extrait et d’une date de consultation. Des valeurs contradictoires restent dans le dossier pour examen.
+
+### Angle de campagne
+
+Raison de contacter une cible précise, exprimée avec l’intérêt pour cette cible et la réponse recherchée. Une campagne peut porter plusieurs angles.
+
+### Technique de rédaction
+
+Façon de présenter un angle dans le message. Pour chaque angle, le responsable de campagne sélectionne les techniques autorisées, fournit leurs éléments et indique leur ordre de préférence.
