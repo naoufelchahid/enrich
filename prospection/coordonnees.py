@@ -1,8 +1,8 @@
 """Conserver les preuves et compléter les champs manquants de l’entreprise."""
 import json
-import re
+import phonenumbers
 
-from .identite_serp import WEBMAIL
+from .identite_serp import WEBMAIL, email_complet, telephone_complet
 from .recherche_dirigeants import domaine, normaliser, page_entreprise
 
 
@@ -10,8 +10,8 @@ def cle_valeur(champ, valeur):
     if champ == "site":
         return domaine(valeur)
     if champ == "telephone":
-        chiffres = re.sub(r"\D", "", valeur).removeprefix("00")
-        return "212" + chiffres[1:] if chiffres.startswith("0") and len(chiffres) == 10 else chiffres
+        numero = telephone_complet(valeur)
+        return phonenumbers.format_number(numero, phonenumbers.PhoneNumberFormat.E164) if numero else ""
     return normaliser(valeur)
 
 
@@ -30,6 +30,7 @@ def completer(crm, e, faits):
     valeurs = {}
     for champ in ("site", "linkedin", "adresse", "ville", "telephone", "activite"):
         choix = {cle_valeur(champ, f["valeur"]): f["valeur"] for f in preuves if f.get("champ") == champ}
+        choix.pop("", None)
         if len(choix) == 1:
             valeurs[champ] = next(iter(choix.values()))
     entreprise = {**dossier, **e, "coordonnees_documentees": preuves}
@@ -46,12 +47,10 @@ def completer(crm, e, faits):
             charge["address"] = adresse
     tel = fiche.get("phones") or {}
     if valeurs.get("telephone") and not tel.get("primaryPhoneNumber"):
-        numero = cle_valeur("telephone", valeurs["telephone"])
-        if numero.startswith("212") and len(numero) == 12:
-            charge["phones"] = {**tel, "primaryPhoneNumber": numero[3:], "primaryPhoneCountryCode": "MA",
-                                "primaryPhoneCallingCode": "+212"}
-        else:
-            charge["phones"] = {**tel, "primaryPhoneNumber": valeurs["telephone"]}
+        numero = telephone_complet(valeurs["telephone"])
+        charge["phones"] = {**tel, "primaryPhoneNumber": phonenumbers.national_significant_number(numero),
+                            "primaryPhoneCountryCode": phonenumbers.region_code_for_number(numero) or "",
+                            "primaryPhoneCallingCode": "+" + str(numero.country_code)}
     if valeurs.get("activite") and not fiche.get("activitySector"):
         charge["activitySector"] = valeurs["activite"]
     if entreprise != dossier:
@@ -68,6 +67,8 @@ def boites_publiees(e):
         if f.get("champ") != "email":
             continue
         mail = f["valeur"].casefold()
+        if not email_complet(mail):
+            continue
         hote = mail.partition("@")[2]
         officielle = ((f["origine"] == "Site officiel" and site and domaine(f["url"]) == site)
                       or (f["origine"] in ("Citation", "Organique") and linkedin

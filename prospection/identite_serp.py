@@ -1,5 +1,7 @@
 """Recherche des coordonnées publiques d’entreprises déjà sélectionnées dans Kerix."""
 import re
+
+import phonenumbers
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from datetime import datetime, timezone
@@ -58,6 +60,20 @@ SCHEMA_FAIT = {
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["faits", "pages"],
           "properties": {"faits": {"type": "array", "items": SCHEMA_FAIT},
                          "pages": {"type": "array", "items": CHAMP_TEXTE}}}
+
+
+def telephone_complet(valeur):
+    if "..." in valeur or "…" in valeur or not re.fullmatch(r"[+0-9().\s/-]+", valeur):
+        return None
+    try:
+        numero = phonenumbers.parse(valeur, "MA")
+    except phonenumbers.NumberParseException:
+        return None
+    return numero if phonenumbers.is_valid_number(numero) else None
+
+
+def email_complet(valeur):
+    return EMAIL.fullmatch(valeur) and ".." not in valeur and not valeur.partition("@")[0].endswith(".")
 
 
 def fiche_kerix(e):
@@ -146,9 +162,9 @@ def analyser(e, docs, liens=(), agent=agent_coordonnees):
             continue
         if champ == "email":
             v = v.casefold()
-            if not EMAIL.fullmatch(v):
+            if not email_complet(v):
                 continue
-        if champ == "telephone" and not 7 <= len(re.sub(r"\D", "", v)) <= 15:
+        if champ == "telephone" and not telephone_complet(v):
             continue
         faits.append({"champ": champ, "valeur": v, "extrait": extrait, "url": doc["url"],
                       "origine": doc["origine"], "date": datetime.now(timezone.utc).isoformat()})

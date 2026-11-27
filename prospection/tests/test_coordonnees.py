@@ -110,3 +110,11 @@ def test_recours_apres_trois_echecs_et_option_par_campagne():
                 etat.update(noeuds[nom](etat))
         assert [c["adresse_admise"] for c in etat["admis"]] == ([attendue] if attendue else [])
         assert budget.lots == ([personnelles, [boite]] if attendue == boite else [personnelles])
+
+
+def test_coordonnees_masquees_dans_un_extrait():
+    from prospection.identite_serp import email_complet, telephone_complet
+
+    assert not email_complet("mede...@gmail.com")
+    assert telephone_complet("06611875...") is None
+    assert telephone_complet("+212 6 66 55 07 72").country_code == 212
