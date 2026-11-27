@@ -19,7 +19,6 @@
     "test:unit": "vitest run --config vitest.unit.config.ts"
   },
   "dependencies": {
-    "nodemailer": "^9.0.6",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

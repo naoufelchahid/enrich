@@ -1,9 +1,8 @@
-"""Adaptateurs du worker pour Twenty et Thunderbird MCP."""
+"""Adaptateurs de campagne pour Twenty et Thunderbird MCP."""
 import json
 import os
 from pathlib import Path
 from urllib.request import Request,urlopen
-from .collecte import url_personnelle
 
 
 def requete(url,jeton,corps=None,methode=None):
@@ -16,15 +15,6 @@ def requete(url,jeton,corps=None,methode=None):
 def crm(chemin,corps=None,methode=None):
     return requete(os.environ["TWENTY_BASE_URL"].rstrip("/")+"/rest/"+chemin,
                    os.environ["TWENTY_API_KEY"],corps,methode)
-
-
-def eligible(entree,adresse):
-    data=crm("people/"+entree["twenty_id"])["data"]
-    p=next(iter(data.values()))
-    return (p["id"]==entree["twenty_id"] and p.get("campaignStatus") in (None,"","READY_TO_MAIL")
-            and p["emails"]["primaryEmail"].casefold()==adresse
-            and url_personnelle(p["linkedinLink"]["primaryLinkUrl"])==entree["identite"]
-            and entree["verification"]["brut"]["email"].casefold()==adresse)
 
 
 def envoyer(charge):
@@ -43,20 +33,8 @@ def envoyer(charge):
                 preuve=json.loads(bloc["text"])
             except ValueError:
                 continue
-            if isinstance(preuve,dict) and (preuve.get("success") is True or preuve.get("messageId")):
+            if (isinstance(preuve, dict) and not preuve.get("error")
+                    and (preuve.get("messageId") or (preuve.get("success") is True
+                         and preuve.get("message") == "Message sent"))):
                 return preuve
     return None
-
-
-def synchroniser(charge,recu,date):
-    chemin="people/"+charge["personne"]
-    p=next(iter(crm(chemin)["data"].values()))
-    trace=f"envoi {date} | {charge['empreinte']}"
-    if "adresse_qualifiee" in charge:
-        trace = "Pilote vers la boîte de test " + trace
-    source=p.get("sourceFile") or ""
-    patch={} if trace in source else {"sourceFile":(source+" | "+trace).strip(" |")}
-    if "adresse_qualifiee" not in charge and p.get("campaignStatus") in (None,"","READY_TO_MAIL"):
-        patch["campaignStatus"]="EMAIL_SENT"
-    if patch:
-        crm(chemin,patch,"PATCH")

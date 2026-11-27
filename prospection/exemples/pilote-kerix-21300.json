@@ -1,0 +1,11 @@
+{
+  "rubrique": "21300",
+  "taille": 30,
+  "graine": 21300,
+  "campagne": "pilote-kerix-21300",
+  "plafond_usd": "3.00",
+  "recours": {
+    "harvest_profils": true,
+    "harvest_effectifs": true
+  }
+}
