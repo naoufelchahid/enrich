@@ -53,8 +53,8 @@ def test_conflit_sans_ecrasement_et_reimport_idempotent():
             self.modifications += 1
     crm = CRM()
     e = {"ice": "123", "twenty_id": "id", "nom": "Exemple", "kerix": "https://kerix.net/exemple"}
-    preuves = [fait("ville", "Casablanca"), fait("telephone", "+212 512345678"),
-               fait("telephone", "+212 512345679"), fait("activite", "Conseil")]
+    preuves = [fait("ville", "Casablanca"), fait("telephone", "+212 666550772"),
+               fait("telephone", "+212 666550773"), fait("activite", "Conseil")]
     e = completer(crm, e, preuves)
     assert crm.fiche["address"] == {"addressCity": "Rabat", "addressPostcode": "10000"}
     assert "phones" not in crm.fiche

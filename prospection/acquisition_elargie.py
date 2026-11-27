@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from .collecte import url_personnelle
 from .coordonnees import boites_publiees, completer
-from .identite_serp import EMAIL, SERP, entree_serp, explorer, fiche_kerix, resoudre
+from .identite_serp import SERP, email_complet, entree_serp, explorer, fiche_kerix, resoudre
 from .verification_account56 import ACTEUR_VERIFICATION, plafond_lot, verifier_lot
 from .recherche_dirigeants import adresses, domaine, normaliser, page_entreprise, postes, premier
 
@@ -41,7 +41,7 @@ def candidats_elargis(lignes, fournisseur, entreprises, provenance, personnes=No
         domaine_atteste = domaine(e["site"])
         if not domaine_atteste and p["linkedin"] and p["linkedin"] == page_entreprise(e["linkedin"]):
             domaine_atteste = p["domaine"]
-        recevables = [a for a in mails if EMAIL.fullmatch(a) and a.partition("@")[2] == domaine_atteste]
+        recevables = [a for a in mails if email_complet(a) and a.partition("@")[2] == domaine_atteste]
         resultats.append({
             "linkedin": url, "prenom": premier(ligne, "firstName", "first_name"),
             "nom": premier(ligne, "lastName", "last_name"), "entreprise": e,

@@ -1,7 +1,5 @@
 """Recherche des coordonnées publiques d’entreprises déjà sélectionnées dans Kerix."""
 import re
-
-import phonenumbers
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from datetime import datetime, timezone
@@ -9,6 +7,8 @@ from urllib.parse import urldefrag
 from urllib.error import URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+import phonenumbers
 
 from .codex_serveur import decision
 from .recherche_dirigeants import domaine, page_entreprise
@@ -213,6 +213,8 @@ def explorer(e, lire=lire_page, agent=agent_coordonnees):
     supplement, _ = extraire(autres, [])
     for d in [home, *autres]:
         for mail in sorted(set(EMAIL.findall(d["texte"]))):
+            if not email_complet(mail):
+                continue
             faits.append({"champ": "email", "valeur": mail.casefold(), "origine": "Site officiel",
                           "url": d["url"], "extrait": mail, "date": datetime.now(timezone.utc).isoformat()})
     return faits + supplement
