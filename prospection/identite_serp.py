@@ -2,10 +2,11 @@
 import re
 from concurrent.futures import ThreadPoolExecutor
 from html import unescape
+from http.client import HTTPException
 from datetime import datetime, timezone
 from urllib.parse import urldefrag
 from urllib.error import URLError
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import phonenumbers
@@ -37,13 +38,16 @@ class RedirectionsPubliques(HTTPRedirectHandler):
 def lire_page(url):
     if not public(url):
         return "", ""
-    requete = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Enrich/1.0)"})
     try:
+        parties = urlsplit(url)
+        url = parties._replace(path=quote(parties.path, safe="/%:@!$&'()*+,;="),
+                               query=quote(parties.query, safe="%&=/?+,:;@!$'()*"), fragment="").geturl()
+        requete = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Enrich/1.0)"})
         with build_opener(RedirectionsPubliques()).open(requete, timeout=7) as r:
             if r.headers.get_content_type() not in {"text/html", "text/plain", "application/xhtml+xml"}:
                 return "", ""
             return r.url, r.read(1_000_000).decode(r.headers.get_content_charset() or "utf-8", "replace")
-    except (URLError, OSError, ValueError, LookupError):
+    except (HTTPException, URLError, OSError, ValueError, LookupError):
         return "", ""
 
 
