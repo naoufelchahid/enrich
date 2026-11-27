@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 
 from .collecte import url_personnelle
-from .coordonnees import boites_publiees, completer
+from .coordonnees import boite_standard, boites_publiees, completer
 from .identite_serp import SERP, email_complet, entree_serp, explorer, fiche_kerix, resoudre
 from .verification_account56 import ACTEUR_VERIFICATION, plafond_lot, verifier_lot
 from .recherche_dirigeants import adresses, domaine, normaliser, page_entreprise, postes, premier
@@ -157,9 +157,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
             ice = c["entreprise"]["ice"]
             for a in c["adresses_recevables"]:
                 ices_par_adresse[a].add(ice)
-                partagee = (c["fournisseur"] == "Coordonnées publiées" or a.partition("@")[0] in
-                            {"contact", "info", "hello", "bonjour", "office", "accueil", "commercial", "sales",
-                             "support", "direction", "secretariat", "compta", "administration", "reception"})
+                partagee = c["fournisseur"] == "Coordonnées publiées" or boite_standard(a, c["entreprise"])
                 if partagee != recours:
                     continue
                 if not recours and not premier_passage and a not in controles and c["fournisseur"] not in ("Harvest profils", "Harvest effectifs"):

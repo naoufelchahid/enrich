@@ -1,5 +1,6 @@
 """Conserver les preuves et compléter les champs manquants de l’entreprise."""
 import json
+
 import phonenumbers
 
 from .identite_serp import WEBMAIL, email_complet, telephone_complet
@@ -60,6 +61,22 @@ def completer(crm, e, faits):
     return entreprise
 
 
+ROLES = {"contact", "contacts", "info", "infos", "information", "hello", "bonjour", "office",
+         "accueil", "commercial", "commerciale", "sales", "support", "direction", "secretariat",
+         "compta", "administration", "reception", "service", "assistance", "communication",
+         "enquiries", "inquiries", "cabinet", "bureau", "agence", "marketing", "rh", "export"}
+
+
+def boite_standard(mail, e):
+    local = normaliser(mail.partition("@")[0])
+    if set(local.split()) & ROLES:
+        return True
+    libelle = local.replace(" ", "")
+    domaine_societe = domaine(e.get("site")).split(".")[0]
+    noms = {normaliser(v).replace(" ", "") for v in (e.get("nom"), domaine_societe) if v}
+    return libelle in noms
+
+
 def boites_publiees(e):
     resultat = {}
     site, linkedin = domaine(e.get("site")), page_entreprise(e.get("linkedin"))
@@ -67,7 +84,7 @@ def boites_publiees(e):
         if f.get("champ") != "email":
             continue
         mail = f["valeur"].casefold()
-        if not email_complet(mail):
+        if not email_complet(mail) or not boite_standard(mail, e):
             continue
         hote = mail.partition("@")[2]
         officielle = ((f["origine"] == "Site officiel" and site and domaine(f["url"]) == site)

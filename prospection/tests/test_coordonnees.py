@@ -21,7 +21,8 @@ def test_digest_extrait_exact_et_domaine_confirme():
                                    ("invente@exemple.ma", "Siège", 1),
                                    ("info@exemple.ma", "info@exemple.ma", -1))]}
     preuves, _ = analyser(e, docs, agent=avis)
-    autres = [fait("email", "cabinet@gmail.com"), fait("email", "info@homonyme.ma"),
+    autres = [fait("email", "prenom.nom@exemple.ma", "Site officiel", e["site"]),
+              fait("email", "cabinet@gmail.com"), fait("email", "info@homonyme.ma"),
               fait("email", "accueil@hotmail.fr", "Site officiel", e["site"])]
     assert {v["email"] for v in boites_publiees({**e, "coordonnees_documentees": preuves + autres})} == {
         "info@exemple.ma", "accueil@hotmail.fr"}
