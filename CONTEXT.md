@@ -45,3 +45,11 @@ Lien entre une fiche contact et une campagne. Une personne peut avoir plusieurs 
 ### Import Excel
 
 Le composant Twenty importe les lignes mappées dans les fiches entreprise et personne. Les lignes sans adresse sont consignées pour examen. La campagne dispose de sa propre étape de vérification Account56 et d’approbation du brouillon.
+
+### Boîte de contact de l’entreprise
+
+Adresse publiée pour joindre l’entreprise ou un service. Elle sert de recours lorsqu’aucune adresse nominative rattachée à cette entreprise n’a été validée. Une adresse sur un domaine de messagerie grand public exige une publication officielle.
+
+### Coordonnée documentée
+
+Valeur d’une coordonnée d’entreprise accompagnée d’une source, d’un extrait et d’une date de consultation. Des valeurs contradictoires restent dans le dossier pour examen.

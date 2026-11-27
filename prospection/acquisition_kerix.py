@@ -27,11 +27,12 @@ class Etat(TypedDict, total=False):
     admis: list
     controles: dict
     bilan: dict
+    sites_visites: dict
     serp: dict
     plafond_atteint: bool
 
 
-def graphe_acquisition(kerix, crm, budget, *, harvest_profils=True, harvest_effectifs=True, fiche=None):
+def graphe_acquisition(kerix, crm, budget, *, harvest_profils=True, harvest_effectifs=True, boite_recours=True, fiche=None):
     def selection(etat):
         source = sorted(set(etat.get("source") or kerix.source(etat["rubrique"])))
         return {"source": source, "tirage": tirer(source, etat["taille"], etat["graine"]),
@@ -79,7 +80,7 @@ def graphe_acquisition(kerix, crm, budget, *, harvest_profils=True, harvest_effe
     g = StateGraph(Etat)
     noeuds = [("tirage_kerix", selection), ("import_twenty", importer)]
     noeuds.extend(acquisition_elargie.noeuds_elargis(crm, budget, harvest_profils=harvest_profils,
-                                 harvest_effectifs=harvest_effectifs,
+                                 harvest_effectifs=harvest_effectifs, boite_recours=boite_recours,
                                  acteurs=(PIPELINE, PROFILS, EFFECTIFS)))
     noeuds.append(("bilan_acquisition", bilan))
     precedent = START

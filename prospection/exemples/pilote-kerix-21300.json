@@ -5,6 +5,7 @@
   "campagne": "pilote-kerix-21300",
   "plafond_usd": "3.00",
   "recours": {
+    "boite_entreprise": true,
     "harvest_profils": true,
     "harvest_effectifs": true
   }

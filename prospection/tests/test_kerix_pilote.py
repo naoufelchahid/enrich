@@ -325,10 +325,11 @@ def test_cascade_elargie_admet_avec_account56_et_refuse_les_preuves_historiques(
 
     original = module.noeuds_elargis
     monkeypatch.setattr(module, "noeuds_elargis", lambda *args, **kwargs: original(
-        *args, **kwargs, resoudre_serp=lambda e, l: {b["ice"]: {
-            "site": "https://b.example", "linkedin": "", "preuve_identite": {
-                "url": "https://b.example", "extrait": "Entreprise B"}}},
-        lire_site=lambda e: [{"email": "contact@b.example", "url": e["site"], "extrait": "contact@b.example"}]
+        *args, **kwargs, resoudre_serp=lambda es, lignes, cible: {b["ice"]: [
+            {"champ": "site", "valeur": "https://b.example", "url": "https://b.example",
+             "extrait": "Entreprise B", "origine": "Organique", "date": "2026-11-27"}]},
+        lire_site=lambda e: [{"champ": "email", "valeur": "contact@b.example", "url": e["site"],
+                              "extrait": "contact@b.example", "origine": "Site officiel", "date": "2026-11-27"}]
         if e["ice"] == b["ice"] else [],
     ))
     crm = Twenty(API())
@@ -340,8 +341,9 @@ def test_cascade_elargie_admet_avec_account56_et_refuse_les_preuves_historiques(
     assert sum(not d["linkedin"] for d in bilan["admis"]) == 2
     assert len(bilan["candidats"]) == 6
     assert [(acteur, entree["emails"]) for acteur, entree in appels if acteur == ACTEUR_VERIFICATION] == [
-        (ACTEUR_VERIFICATION, ["ancien@d.example", "camille@a.example", "contact@b.example", "dani@c.example"]),
-        (ACTEUR_VERIFICATION, ["luc@d.example", "paul@c.example"])]
+        (ACTEUR_VERIFICATION, ["ancien@d.example", "camille@a.example", "dani@c.example"]),
+        (ACTEUR_VERIFICATION, ["luc@d.example", "paul@c.example"]),
+        (ACTEUR_VERIFICATION, ["contact@b.example"])]
     assert bilan["bilan"]["verdicts_verification"] == {"accepte": 4, "risque": 2}
     contact = next(d for d in bilan["admis"] if d["adresse_admise"] == "camille@a.example")
     p = crm.record("people", contact["twenty_id"])
