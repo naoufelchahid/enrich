@@ -99,6 +99,7 @@ def _acquerir(args, crm):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commandes = parser.add_subparsers(dest="commande", required=True)
+    commandes.add_parser("ecouter-redaction")
     commandes.add_parser("installer-schema")
     preparation = commandes.add_parser("configurer-campagne")
     preparation.add_argument("campagne")
@@ -117,6 +118,10 @@ def main():
     mode.add_argument("--production", action="store_true")
     args = parser.parse_args()
     crm = Twenty()
+    if args.commande == "ecouter-redaction":
+        from .preparation_campagnes import ecouter
+        ecouter(crm)
+        return
     if args.commande == "installer-schema":
         resultat = installer()
     elif args.commande == "configurer-campagne":

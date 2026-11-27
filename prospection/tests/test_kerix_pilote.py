@@ -167,7 +167,7 @@ def test_redaction_fige_les_contacts_et_suit_a_sans_toucher_b():
     a1, a2 = crm.admettre("A", [initiale, retiree])[::-1]
     b1, = crm.admettre("B", [initiale])
     for ref in ("A", "B"):
-        list(crm.lots(CAMPAGNES, [{"reference": ref, "briefJson": json.dumps({"offre": "Recette"})}]))
+        list(crm.lots(CAMPAGNES, [{"reference": ref, "briefJson": json.dumps({"angles": [{"cible":"Tous", "interet":"Temps", "reponse":"Répondre", "techniques":[{"type":"choix","question":"Quand ?", "option_a":"Mars","option_b":"Avril"}]}]})}]))
     transmis = []
 
     def ecrire(entree):
@@ -176,7 +176,7 @@ def test_redaction_fige_les_contacts_et_suit_a_sans_toucher_b():
         return {"version": 1, "revue": {"verdict": "approuve", "version": 1},
                 "brouillon": {"objet": "Recette", "corps": "Texte de test"}}
 
-    g = graphe_campagne(crm, ecrire=ecrire, transmettre=lambda charge: transmis.append(charge) or {"id": "recu"})
+    g = graphe_campagne(crm, ecrire=ecrire, choisir_angle=lambda angles,d: (angles[0], ""), transmettre=lambda charge: transmis.append(charge) or {"id": "recu"})
     etat = g.invoke({"campagne": "A"})
     assert set(map(tuple, etat["selection"])) == {
         (a["twenty_id"], a["affectation_id"]) for a in (a1, a2)}
@@ -374,3 +374,25 @@ def test_rejet_recent_invalide_le_dossier_et_empeche_sa_readmission_depuis_un_an
     crm.admettre("A", [contact])
     crm.actualiser_rejets({adresse: rejet})
     assert adresse_admise(crm.record("people", admis["twenty_id"])) == adresse
+
+
+def test_ancien_brouillon_et_brief_modifie_sont_a_regenerer():
+    crm = Twenty(API())
+    e, = crm.importer_entreprises([fiche("a", "000000000000001")])[0]
+    a, = crm.admettre("A", [dossier(e)])
+    brief = {"angles": [{"cible":"entreprises", "interet":"délais", "reponse":"réponse",
+             "techniques":[{"type":"choix", "question":"Quand ?", "option_a":"Mars", "option_b":"Avril"}]}]}
+    campagne, = crm.lots(CAMPAGNES,[{"reference":"A", "briefJson":json.dumps(brief)}])
+    envois = []
+    g = graphe_campagne(crm, choisir_angle=lambda angles,d: (angles[0], ""),
+        ecrire=lambda entree: {"version":1,"revue":{"verdict":"approuve","version":1},
+                               "brouillon":{"objet":"Test","corps":"Test"}},
+        transmettre=lambda charge: envois.append(charge))
+    b, = g.invoke({"campagne":"A"})["brouillons"]
+    envoi = {"campagne":"A","affectation_id":a["affectation_id"],"approbation":b["empreinte"],"production":True}
+    crm.modifier(CAMPAGNES,campagne["id"],briefJson=json.dumps({**brief,"offre":"Autre offre"}))
+    assert "régénérer" in g.invoke(envoi)["resultat"]["motif"]
+    del b["version_brief"]
+    crm.modifier(AFFECTATIONS,a["affectation_id"],draftJson=json.dumps(b))
+    assert "régénérer" in g.invoke(envoi)["resultat"]["motif"]
+    assert envois == []
