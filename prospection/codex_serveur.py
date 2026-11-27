@@ -4,16 +4,10 @@ import os
 import subprocess
 import tempfile
 
-BROWSENTIC = {
-    "command": "browsentic", "args": ["mcp"],
-    "enabled_tools": ["page_getPageInfo", "page_openTab", "page_extractText", "page_closeTab"],
-}
-
-
-def decision(instructions, prompt, dossier, schema, *, browsentic=False):
+def decision(instructions, prompt, dossier, schema):
     with tempfile.TemporaryDirectory() as cwd:
         commande = ["codex", "app-server", "-c", 'web_search="disabled"']
-        config = {"mcp_servers": {"browsentic": BROWSENTIC} if browsentic else {},
+        config = {"mcp_servers": {},
                   "shell_environment_policy": {"inherit": "none"}}
         with subprocess.Popen(commande, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, text=True) as serveur:

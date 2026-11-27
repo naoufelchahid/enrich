@@ -1,37 +1,12 @@
-"""Contrats communs des candidats aux trois fonctions de direction."""
+"""Normalisation des informations d’entreprise et de poste."""
 import re
 import unicodedata
 from urllib.parse import urlsplit
-
-from .collecte import url_personnelle
-
-VERSION_TITRES = "2"
-TITRES = {
-    "gerance": ("gérant", "gérant associé", "associé gérant", "co-gérant", "manager statutaire",
-                "gérante", "gérante associée", "associée gérante", "co-gérante", "مسير", "مسيرة"),
-    "direction_generale": ("directeur général", "directrice générale", "directeur général délégué",
-                          "directrice générale déléguée", "président directeur général",
-                          "présidente directrice générale", "DG", "PDG", "CEO", "chief executive officer",
-                          "managing director", "general director", "directeur général et cofondateur",
-                          "directrice générale et cofondatrice", "Founder & CEO", "CEO & Founder",
-                          "Founder and CEO", "Co-founder & CEO", "CEO & Co-founder",
-                          "Managing Director & Founder", "المدير العام", "المديرة العامة"),
-    "direction_commerciale": ("directeur commercial", "directrice commerciale", "directeur des ventes",
-                              "directrice des ventes", "sales director", "commercial director",
-                              "chief commercial officer", "directeur commercial et marketing",
-                              "directrice commerciale et marketing", "المدير التجاري", "المديرة التجارية"),
-}
-PRIORITES = {fonction: i for i, fonction in enumerate(TITRES)}
 
 
 def normaliser(texte):
     texte = unicodedata.normalize("NFKD", str(texte or "").casefold())
     return " ".join(re.findall(r"[^\W_]+", "".join(c for c in texte if not unicodedata.combining(c))))
-
-
-def fonction(titre):
-    titre = normaliser(titre)
-    return next((cle for cle, variantes in TITRES.items() if titre in map(normaliser, variantes)), None)
 
 
 def domaine(site):
@@ -99,39 +74,3 @@ def adresses(ligne):
     valeurs.extend(ligne.get("emails") or [] if isinstance(ligne.get("emails"), list) else [])
     emails = [v.get("email") if isinstance(v, dict) else v for v in valeurs]
     return sorted({v.strip().casefold() for v in emails if isinstance(v, str) and v.strip()})
-
-
-def candidats(lignes, fournisseur, entreprises, personnes=None, provenance=None):
-    rapproches, attentes = [], []
-    for ligne in lignes:
-        url = url_personnelle(premier(ligne, "linkedinUrl", "linkedin_url", "personLinkedinUrl", "personLinkedInUrl"))
-        choix = {}
-        for poste in postes(ligne, fournisseur):
-            role = fonction(poste["titre"])
-            if not role:
-                continue
-            for entreprise in entreprises:
-                if personnes is not None and entreprise["ice"] not in personnes.get(url, set()):
-                    continue
-                correspond = (
-                    poste["domaine"] and poste["domaine"] == domaine(entreprise["site"])
-                    or poste["linkedin"] and poste["linkedin"] == page_entreprise(entreprise["linkedin"])
-                )
-                if correspond:
-                    cle = entreprise["ice"], role, poste["pointeur"]
-                    choix[cle] = (entreprise, poste, role)
-        if not url or len(choix) != 1:
-            attentes.append({"fournisseur": fournisseur, "linkedin": url, "motif": "Rattachement ambigu"
-                             if len(choix) > 1 else "Profil, fonction ou employeur non confirmé", "brut": ligne})
-            continue
-        entreprise, poste, role = next(iter(choix.values()))
-        nom_complet = str(premier(ligne, "fullName", "full_name")).strip()
-        debut_nom, _, fin_nom = nom_complet.partition(" ")
-        rapproches.append({
-            "linkedin": url, "prenom": premier(ligne, "firstName", "first_name") or debut_nom,
-            "nom": premier(ligne, "lastName", "last_name") or fin_nom, "entreprise": entreprise,
-            "poste": {**poste, "fonction": role, "version_titres": VERSION_TITRES},
-            "fournisseur": fournisseur, "provenance": provenance, "profil": ligne,
-            "adresses": adresses(ligne),
-        })
-    return rapproches, attentes

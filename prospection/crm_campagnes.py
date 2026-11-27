@@ -2,10 +2,12 @@
 import json
 import re
 from collections import defaultdict
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 from .collecte import url_personnelle
 from .transport import crm
+from .verification_account56 import ACTEUR_VERIFICATION, preuve_acceptee
 
 AFFECTATIONS = "prospectingAssignments"
 CAMPAGNES = "prospectingCampaigns"
@@ -24,6 +26,17 @@ def api_twenty(methode, chemin, *, params=None, contenu=None):
 
 def charger_json(texte):
     return json.loads(texte) if texte else None
+
+
+def dernier_controle(dossier, adresse):
+    preuves = [p for p in dossier.get("verifications", [])
+               if p.get("adresse") == adresse and p.get("fournisseur") == ACTEUR_VERIFICATION]
+    return max(preuves, key=date_controle, default={})
+
+
+def date_controle(preuve):
+    date = preuve.get("date")
+    return datetime.fromisoformat(date) if date else datetime.min.replace(tzinfo=timezone.utc)
 
 
 class Twenty:
@@ -87,11 +100,30 @@ class Twenty:
             raise RuntimeError("Résultats d’import Twenty incomplets")
         return [{**groupees[ice][0], "twenty_id": identifiant} for ice, identifiant in ids.items()], exclusions
 
+    def actualiser_rejets(self, controles):
+        rejets = {a: p for a, p in controles.items() if p.get("provenance") and not preuve_acceptee(p, a)}
+        if not rejets:
+            return
+        for personne in self.lignes("people", fields="id,emails,prospectingDossier"):
+            adresse = ((personne.get("emails") or {}).get("primaryEmail") or "").casefold()
+            preuve = rejets.get(adresse)
+            dossier = charger_json(personne.get("prospectingDossier")) or {}
+            if not preuve or (dossier.get("decision_finale") or {}).get("email") != adresse:
+                continue
+            precedente = dernier_controle(dossier, adresse)
+            if preuve == precedente or date_controle(preuve) < date_controle(precedente):
+                continue
+            dossier.setdefault("verifications", []).append(preuve)
+            dossier["adresse_admise"] = ""
+            dossier["decision_finale"] = {"email": adresse, "verdict": "en_attente",
+                                         "motif": "Vérification Account56 · " + preuve["verdict"]}
+            self.modifier("people", personne["id"], prospectingDossier=json.dumps(dossier, ensure_ascii=False))
+
     def admettre(self, reference, dossiers):
         if not dossiers:
             return []
         personnes, adresses, fiches = defaultdict(list), defaultdict(set), {}
-        for p in self.lignes("people", fields="id,linkedinLink,emails,companyId,prospectingIdentity"):
+        for p in self.lignes("people", fields="id,linkedinLink,emails,companyId,prospectingIdentity,prospectingDossier"):
             url = url_personnelle((p.get("linkedinLink") or {}).get("primaryLinkUrl"))
             if url:
                 personnes[url].append(p)
@@ -117,8 +149,17 @@ class Twenty:
             identite = precedent.get("prospectingIdentity") or url or "email:" + adresse
             if identite in retenus or adresses[adresse] - {precedent.get("id")}:
                 raise ValueError("Identité ou adresse de contact en double")
-            if d["decision_finale"]["verdict"] != "admis" or not crm_id:
+            preuve = (d.get("verifications") or [{}])[-1]
+            if (d["decision_finale"]["verdict"] != "admis" or d["decision_finale"].get("email") != adresse or not crm_id
+                    or not preuve_acceptee(preuve, adresse)):
                 raise ValueError("Dossier non admis")
+            archive = charger_json(precedent.get("prospectingDossier")) or {}
+            controle_archive = dernier_controle(archive, adresse)
+            if (controle_archive and not preuve_acceptee(controle_archive, adresse)
+                    and date_controle(controle_archive) >= date_controle(preuve)):
+                continue
+            if controle_archive and date_controle(controle_archive) > date_controle(preuve):
+                d = {**d, "verifications": [*d["verifications"], controle_archive]}
             retenus[identite] = d
             emails = precedent.get("emails") or {}
             autres = [e for e in [emails.get("primaryEmail"), *(emails.get("additionalEmails") or [])]

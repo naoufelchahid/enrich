@@ -1,14 +1,10 @@
-"""Collecte Apify avec reprise des jeux de données dans SQLite."""
-import hashlib
+"""Client Apify pour les lots de prospection."""
 import json
-import os
 import re
-import sqlite3
 import time
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from .campagne import requete
 
 
 def url_personnelle(valeur):
@@ -38,23 +34,6 @@ class Apify:
         with urlopen(demande, timeout=90) as resultat:
             return json.load(resultat)
 
-    def lignes(self, base, cle, acteur, entree, *, max_total_charge_usd=None):
-        ligne = base.execute("SELECT run FROM runs WHERE cle=?", (cle,)).fetchone()
-        if ligne:
-            run = self.appeler("actor-runs/" + ligne[0])["data"]
-        else:
-            chemin = "acts/" + acteur + "/runs"
-            if max_total_charge_usd is not None:
-                chemin += "?" + urlencode({"maxTotalChargeUsd": str(max_total_charge_usd)})
-            run = self.appeler(chemin, entree)["data"]
-            with base:
-                base.execute("INSERT INTO runs VALUES (?,?,?)",
-                             (cle, run["id"], run["defaultDatasetId"]))
-        run = self.attendre(run)
-        if run["status"] != "SUCCEEDED":
-            raise RuntimeError(f"Run {run['id']} : {run['status']}")
-        yield from self.dataset(run["defaultDatasetId"])
-
     def attendre(self, run):
         while run["status"] in {"READY", "RUNNING", "TIMING-OUT", "ABORTING"}:
             time.sleep(5)
@@ -70,45 +49,3 @@ class Apify:
                 return
             yield from page
             offset += len(page)
-
-
-def collecter(campagne, chemin, fournisseur):
-    entree = requete(campagne)
-    version = hashlib.sha256(json.dumps(campagne, sort_keys=True).encode()).hexdigest()
-    base = sqlite3.connect(chemin)
-    try:
-        base.executescript("""
-            CREATE TABLE IF NOT EXISTS runs(cle TEXT PRIMARY KEY, run TEXT, dataset TEXT);
-            CREATE TABLE IF NOT EXISTS profils(campagne TEXT, url TEXT, version TEXT,
-                contenu TEXT, PRIMARY KEY(campagne,url,version));
-        """)
-        urls = set()
-        for ligne in fournisseur.lignes(base, version + ":decouverte",
-                "pipelinelabs~lead-scraper-apollo-zoominfo-lusha-ppe", entree):
-            url = url_personnelle(ligne.get("linkedinUrl"))
-            if url:
-                urls.add(url)
-        for url in sorted(urls):
-            lignes = list(fournisseur.lignes(base, version + ":" + url,
-                "harvestapi~linkedin-profile-scraper", {"urls": [url],
-                "profileScraperMode": "Profile details + email search ($10 per 1k)"}))
-            if len(lignes) != 1 or url_personnelle(lignes[0].get("linkedinUrl")) != url:
-                raise ValueError(f"Profil HarvestAPI non rapproché : {url}")
-            contenu = json.dumps(lignes[0], ensure_ascii=False, sort_keys=True)
-            empreinte = hashlib.sha256(contenu.encode()).hexdigest()
-            with base:
-                base.execute("INSERT OR IGNORE INTO profils VALUES (?,?,?,?)",
-                             (version, url, empreinte, contenu))
-        return len(urls)
-    finally:
-        base.close()
-
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("campagne")
-    parser.add_argument("base")
-    args = parser.parse_args()
-    with open(args.campagne, encoding="utf-8") as fichier:
-        print(collecter(json.load(fichier), args.base, Apify(os.environ["APIFY_TOKEN"])))

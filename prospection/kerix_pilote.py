@@ -86,11 +86,10 @@ def _acquerir(args, crm):
         fiches = confirmer_identites(fiches, lire(args.identites))
     with sqlite3.connect(repertoire / "budget.sqlite") as db:
         budget = Budget(db, Apify(os.environ["APIFY_TOKEN"]), configuration["plafond_usd"])
-        recours = dict(configuration.get("recours", {}))
-        recours.pop("zaiq", None)  # Lecture des configurations archivées.
+        recours = configuration.get("recours", {})
         graphe = graphe_acquisition(kerix, crm, budget, fiche=fiches.__getitem__,
-                                    elargi=configuration.get("criteres_elargis", True),
-                                    **recours)
+                                    harvest_profils=recours.get("harvest_profils", True),
+                                    harvest_effectifs=recours.get("harvest_effectifs", True))
         resultat = graphe.invoke(etat)
     archive(chemin_bilan, resultat)
     return resultat["bilan"]
@@ -132,7 +131,7 @@ def main():
     elif args.commande == "rediger":
         resultat = graphe_campagne(crm).invoke({"campagne": reference_valide(args.campagne)})
     else:
-        entree = {k: getattr(args, k) for k in ("campagne", "affectation_id", "approbation", "boite_test")}
+        entree = {k: getattr(args, k) for k in ("campagne", "affectation_id", "approbation", "boite_test", "production")}
         reference_valide(args.campagne)
         resultat = graphe_campagne(crm).invoke(entree)["resultat"]
     print(json.dumps(resultat, ensure_ascii=False, indent=2))

@@ -17,6 +17,7 @@ class Etat(TypedDict, total=False):
     campagne: str
     affectation_id: str
     approbation: str
+    production: bool
     boite_test: str
     selection: list
     brouillons: list
@@ -31,7 +32,7 @@ def adresse_admise(personne):
     if (not adresse or decision.get("verdict") != "admis" or decision.get("email") != adresse
             or not verifications or not preuve_acceptee(verifications[-1], adresse)
             or ((personne.get("emails") or {}).get("primaryEmail") or "").casefold() != adresse
-            or personne.get("companyId") != dossier.get("entreprise", {}).get("twenty_id")
+            or not personne.get("companyId") or personne.get("companyId") != dossier.get("entreprise", {}).get("twenty_id")
             or personne.get("prospectingUnsubscribed") is True):
         return None
     return adresse
@@ -95,6 +96,11 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
         return adresse
 
     def envoi(etat):
+        boite = etat.get("boite_test")
+        if (boite is None) != (etat.get("production") is True):
+            raise ValueError("Choisir une boîte de test ou le mode production")
+        if boite is not None and not re.fullmatch(r"[^@\s,;<>]+@[^@\s,;<>]+", boite):
+            raise ValueError("Adresse de boîte de test invalide")
         identifiant, reference = etat["affectation_id"], etat["campagne"]
         try:
             affectation = crm.record(AFFECTATIONS, identifiant)
@@ -113,8 +119,7 @@ def graphe_campagne(crm, ecrire=simuler, transmettre=envoyer, horloge=lambda: da
         adresse = relecture_crm(etat, approuve)
         if not adresse:
             return {"resultat": {"etat": "ecarte", "motif": "Affectation, dossier ou adresse modifiés"}}
-        boite = etat.get("boite_test")
-        if boite and (not re.fullmatch(r"[^@\s,;<>]+@[^@\s,;<>]+", boite) or boite.casefold() == adresse):
+        if boite is not None and boite.casefold() == adresse:
             raise ValueError("Une boîte de test contrôlée distincte du prospect est requise")
         cle = empreinte([identifiant, boite.casefold() if boite else "production"])
         precedent = list(crm.lignes(EXPEDITIONS, filter="deliveryKey[eq]:" + cle))

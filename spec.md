@@ -1,3 +1,7 @@
+# Spécification historique de l’extension Twenty
+
+Le parcours en vigueur est décrit dans [le contexte du domaine](CONTEXT.md) et [le guide de prospection](prospection/EXPLOITATION.md). Cette spécification conserve les choix de la première version.
+
 ## Problem Statement
 The user currently uses disconnected Python scripts to import and enrich leads. This lacks a unified UI for data curation, requires running manual scripts for enrichment (Kerix, LinkedIn), and lacks an automated autonomous AI agent to draft personalized emails and a drip campaign manager that respects SMTP limits natively within their CRM.
 

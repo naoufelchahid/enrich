@@ -1,9 +1,0 @@
-{
-  "email": "controle@example.invalid",
-  "status": "invalid",
-  "smtp_valid": null,
-  "is_catch_all": false,
-  "is_free_provider": false,
-  "is_role_based": false,
-  "is_disposable": false
-}

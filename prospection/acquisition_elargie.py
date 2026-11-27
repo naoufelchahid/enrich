@@ -8,7 +8,7 @@ from decimal import Decimal
 from .collecte import url_personnelle
 from .identite_serp import EMAIL, SERP, coordonnees_site, entree_serp, resoudre
 from .verification_account56 import ACTEUR_VERIFICATION, plafond_lot, verifier_lot
-from .recherche_dirigeants import adresses, domaine, fonction, normaliser, page_entreprise, postes, premier
+from .recherche_dirigeants import adresses, domaine, normaliser, page_entreprise, postes, premier
 
 
 def noms(entreprise):
@@ -45,7 +45,7 @@ def candidats_elargis(lignes, fournisseur, entreprises, provenance, personnes=No
         resultats.append({
             "linkedin": url, "prenom": premier(ligne, "firstName", "first_name"),
             "nom": premier(ligne, "lastName", "last_name"), "entreprise": e,
-            "poste": {**p, "fonction": fonction(p["titre"])},
+            "poste": p,
             "fournisseur": fournisseur, "provenance": provenance, "profil": ligne,
             "adresses": mails, "adresses_recevables": recevables, "domaine_atteste": domaine_atteste,
             "nom_confirme": False,
@@ -95,7 +95,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
             if mails:
                 candidats.append({
                     "linkedin": None, "prenom": "", "nom": "", "entreprise": e,
-                    "poste": {"titre": "", "fonction": None}, "fournisseur": "Site officiel",
+                    "poste": {"titre": ""}, "fournisseur": "Site officiel",
                     "provenance": {"sources": mails}, "profil": {"coordonnees": mails},
                     "adresses": [m["email"] for m in mails], "adresses_recevables": [m["email"] for m in mails],
                     "nom_confirme": False,
@@ -130,20 +130,26 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         }, es, Decimal("0.001") + volume * Decimal("0.002"), volume)
 
     def restantes(etat):
-        ices = {a["entreprise"]["ice"] for a in etat["admis"]}
-        return [e for e in etat["entreprises"] if e["ice"] not in ices]
+        couvertes = {c["entreprise"]["ice"] for c in etat["candidats"]
+                     if any(etat["controles"].get(a, [{}])[-1].get("verdict") == "accepte"
+                            for a in c["adresses_recevables"])}
+        return [e for e in etat["entreprises"] if e["ice"] not in couvertes]
 
-    def verifier(etat):
+    def verifier(etat, *, premier_passage=False):
         controles = dict(etat["controles"])
         deja_admis = {a["entreprise"]["ice"] for a in etat["admis"]}
         par_ice, ices_par_adresse = defaultdict(dict), defaultdict(set)
         def priorite(candidat, adresse):
             generique = adresse.partition("@")[0] in {"contact", "info", "hello", "bonjour", "office"}
-            return (generique, candidat["fournisseur"] != "Site officiel", not candidat["linkedin"], adresse)
+            precedents = controles.get(adresse, [])
+            deja_ecartee = bool(precedents and precedents[-1]["verdict"] != "accepte")
+            return (deja_ecartee, generique, candidat["fournisseur"] != "Site officiel", not candidat["linkedin"], adresse)
         for c in etat["candidats"]:
             ice = c["entreprise"]["ice"]
             for a in c["adresses_recevables"]:
                 ices_par_adresse[a].add(ice)
+                if not premier_passage and a not in controles and c["fournisseur"] not in ("Harvest profils", "Harvest effectifs"):
+                    continue
                 precedent = par_ice[ice].get(a)
                 if not precedent or priorite(c, a) < priorite(precedent, a):
                     par_ice[ice][a] = c
@@ -160,8 +166,14 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         a_verifier = [a for a in choisies if not any(v["fournisseur"] == ACTEUR_VERIFICATION
                                                     for v in controles.get(a, []))]
         controles_lot = verifier_lot(budget, a_verifier)
+        crm.actualiser_rejets(controles_lot)
         for adresse, resultat in controles_lot.items():
             controles[adresse] = [*controles.get(adresse, []), resultat]
+
+        plafond_atteint = etat.get("plafond_atteint", False) or any(
+            v["verdict"] == "plafond" for v in controles_lot.values())
+        if premier_passage:
+            return {"controles": controles, "plafond_atteint": plafond_atteint}
 
         admissions, attentes = [], []
         personnes = {c["linkedin"] for c in etat["admis"] if c["linkedin"]}
@@ -193,8 +205,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
             "admis": etat["admis"] + crm.admettre(etat["campagne"], admissions),
             "controles": controles,
             "attentes": etat["attentes"] + attentes,
-            "plafond_atteint": (etat.get("plafond_atteint", False)
-                                or any(v["verdict"] == "plafond" for v in controles_lot.values())),
+            "plafond_atteint": plafond_atteint,
         }
 
     def par_profil(etat):
@@ -203,7 +214,9 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         personnes = defaultdict(set)
         for c in etat["candidats"]:
             ice = c["entreprise"]["ice"]
-            if ice in ids and c["linkedin"] and not c["adresses_recevables"]:
+            ecartee = any(etat["controles"].get(a, [{}])[-1].get("verdict") in {"rejete", "risque"}
+                          for a in c["adresses_recevables"])
+            if ice in ids and c["linkedin"] and (not c["adresses_recevables"] or ecartee):
                 personnes[c["linkedin"]].add(ice)
         if not personnes or not harvest_profils:
             return {}
@@ -213,7 +226,8 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
         }, es, Decimal("0.001") + volume * Decimal("0.012"), volume, personnes)
 
     def par_employeur(etat):
-        es = [e for e in restantes(etat) if page_entreprise(e["linkedin"])]
+        avec_profil = {c["entreprise"]["ice"] for c in etat["candidats"] if c["linkedin"]}
+        es = [e for e in restantes(etat) if e["ice"] not in avec_profil and page_entreprise(e["linkedin"])]
         if not es or not harvest_effectifs:
             return {}
         reserve = plafond_lot(3 * len(etat["entreprises"]))
@@ -231,6 +245,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
     return [
         ("resoudre_identites", identites), ("lire_sites_officiels", sites),
         ("pipeline_domaine", par_domaine), ("pipeline_nom", par_nom),
+        ("verifier_avant_harvest", lambda etat: verifier(etat, premier_passage=True)),
         ("harvest_profils_elargis", par_profil), ("harvest_effectifs_elargis", par_employeur),
         ("verifier_adresses", verifier),
     ]

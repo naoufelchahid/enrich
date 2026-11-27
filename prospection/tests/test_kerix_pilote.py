@@ -11,7 +11,6 @@ from prospection.crm_campagnes import AFFECTATIONS, CAMPAGNES, EXPEDITIONS, Twen
 from prospection.envoi_campagne import graphe_campagne
 from prospection.kerix import RUBRIQUES, Kerix, tirer
 from prospection.kerix_pilote import confirmer_identites
-from prospection.recherche_dirigeants import fonction
 from prospection.verification_account56 import ACTEUR_VERIFICATION, normaliser_verdict, plafond_lot, verifier_lot
 
 
@@ -73,14 +72,6 @@ def harvest(ligne):
              "company": {"website": ligne["companyDomain"], "linkedinUrl": ligne["companyLinkedinUrl"]}}]}
 
 
-def juger(dossier, etape):
-    if etape == "initial" and dossier["adresses_recevables"]:
-        return {"verdict": "qualifie", "email": dossier["adresses_recevables"][0], "motif": "Poste confirmé"}
-    if etape == "final" and dossier["verifications"][-1]["verdict"] == "accepte":
-        return {"verdict": "admis", "email": dossier["adresse_admise"], "motif": "Adresse validée"}
-    return {"verdict": "en_attente", "email": "", "motif": "Adresse à confirmer"}
-
-
 def test_kerix_pagine_et_importe_par_ice():
     racine = RUBRIQUES["21300"]
     premiere, seconde, troisieme = [fiche(n, i) for n, i in (("a", "000000000000001"), ("b", ""), ("c", "000000000000003"))]
@@ -122,53 +113,6 @@ class Acteurs:
 
 def account56_ok(adresse):
     return {"email": adresse, "result": "ok", "quality": "good", "subresult": "ok", "error": ""}
-
-
-def test_acquisition_regroupe_les_recours_et_admet_les_boites_validees():
-    a, b, c, d, e, f = [
-        fiche(nom, str(i).zfill(15), site=f"https://{nom}.example",
-              linkedin=f"https://www.linkedin.com/company/{nom}")
-        for i, nom in enumerate("abcdef", start=1)
-    ]
-    gerante = candidat("lea", a, "lea@a.example", "Co-gérante")
-    timeout = candidat("tom", b, "tom@b.example", "Gérant")
-    inconnu = candidat("theo", c, "theo@c.example", "Gérant")
-    maison_mere = candidat("anne", d, "anne@groupe.example", "Gérante")
-    homonyme = {**candidat("autre", e, "autre@ailleurs.example", "Gérante"),
-                "companyDomain": "https://ailleurs.example", "companyLinkedinUrl": ""}
-    refuse = candidat("luc", f, "luc@f.example", "Gérant")
-
-    def jeux(acteur, entree):
-        if acteur == PIPELINE:
-            return ([gerante, timeout, inconnu, maison_mere, homonyme, refuse]
-                    if "gérant" in entree["personTitleIncludes"] else [])
-        if acteur == PROFILS:
-            return [harvest({**maison_mere, "email": "anne@d.example"})]
-        if acteur == EFFECTIFS:
-            return [harvest(candidat("emma", e, "emma@e.example"))]
-        assert acteur == ACTEUR_VERIFICATION
-        return [{**account56_ok(mail), "result": "unknown"} if mail in ("tom@b.example", "theo@c.example")
-                else {**account56_ok(mail), "result": "invalid"} if mail == "luc@f.example"
-                else account56_ok(mail) for mail in reversed(entree["emails"])]
-
-    fiches = {x["kerix"]: x for x in (a, b, c, d, e, f)}
-    acteurs, crm = Acteurs(jeux), Twenty(API())
-    resultat = graphe_acquisition(Kerix(), crm, acteurs, juger, fiche=fiches.__getitem__).invoke(
-        {"source": list(fiches), "rubrique": "21300", "taille": 6, "graine": 4, "campagne": "A"})
-    assert {d["adresse_admise"] for d in resultat["admis"]} == {
-        "lea@a.example", "anne@d.example", "emma@e.example",
-    }
-    assert any("employeur non confirmé" in x["motif"] for x in resultat["attentes"])
-    assert any(x["linkedin"].endswith("/anne") and "groupe.example" in str(x) for x in resultat["attentes"]
-               if x.get("linkedin"))
-    assert resultat["bilan"]["entreprises_couvertes"] == 3
-    assert [v["verdict"] for v in resultat["controles"]["theo@c.example"]] == ["inconnu"]
-    assert [entree["urls"] for acteur, entree in acteurs.appels if acteur == PROFILS] == [
-        ["https://www.linkedin.com/in/anne", "https://www.linkedin.com/in/luc"]]
-    assert [entree["companies"] for acteur, entree in acteurs.appels if acteur == EFFECTIFS] == [[e["linkedin"]]]
-    assert {a for a, vv in resultat["controles"].items() if vv[-1]["verdict"] == "accepte"} == {
-        "lea@a.example", "anne@d.example", "emma@e.example",
-    }
 
 
 def test_budget_reserve_verification_et_reutilise_run():
@@ -246,6 +190,12 @@ def test_redaction_fige_les_contacts_et_suit_a_sans_toucher_b():
                          "approbation": rediges[identifiant]["empreinte"],
                          "boite_test": "controle@example.invalid"})["resultat"]
 
+    entree = {"campagne": "A", "affectation_id": a1["affectation_id"],
+              "approbation": rediges[a1["affectation_id"]]["empreinte"]}
+    for mode in ({}, {"boite_test": ""}, {"production": True, "boite_test": "test@example.org"}):
+        with pytest.raises(ValueError):
+            g.invoke({**entree, **mode})
+    assert transmis == []
     assert envoyer(a2)["etat"] == "ecarte"
     personne = crm.record("people", a1["twenty_id"])
     crm.modifier("people", personne["id"], prospectingUnsubscribed=True)
@@ -274,9 +224,6 @@ def test_identite_revue_ne_change_ni_les_fiches_ni_les_adresses_candidates():
     assert source[f["kerix"]]["site"] == ""
     with pytest.raises(ValueError, match="hors tirage"):
         confirmer_identites(source, {"000000000000002": preuve})
-    assert fonction("Founder & CEO") == "direction_generale"
-    assert fonction("Assistant to CEO") is None
-    assert fonction("Ancienne directrice générale") is None
 
 
 
@@ -331,40 +278,16 @@ def test_lot_account56_deduplique_et_refuse_une_reponse_ambigue():
     assert controles["emma@b.example"]["verdict"] == "manquant"
 
 
-def test_recherche_adresse_du_profil_identifie_par_harvest_effectifs():
-    e = fiche("a", "000000000000001", site="https://a.example",
-              linkedin="https://www.linkedin.com/company/a")
-    dirigeante = harvest(candidat("lea", e, "lea@groupe.example", "Founder, CEO"))
-
-    def jeux(acteur, entree):
-        if acteur == PIPELINE:
-            return []
-        if acteur == EFFECTIFS:
-            return [dirigeante]
-        if acteur == PROFILS:
-            assert entree["urls"] == [dirigeante["linkedinUrl"]]
-            return [{**dirigeante, "email": "lea@a.example"}]
-        assert acteur == ACTEUR_VERIFICATION and entree["emails"] == ["lea@a.example"]
-        return [account56_ok("lea@a.example")]
-
-    acteurs = Acteurs(jeux)
-    resultat = graphe_acquisition(Kerix(), Twenty(API()), acteurs, juger, fiche=lambda url: e).invoke({
-        "source": [e["kerix"]], "rubrique": "21300", "taille": 1, "graine": 0, "campagne": "A",
-    })
-    assert [d["adresse_admise"] for d in resultat["admis"]] == ["lea@a.example"]
-    assert resultat["controles"]["lea@a.example"][0]["verdict"] == "accepte"
-    d = next(c for c in resultat["candidats"] if c["fournisseur"] == "Harvest profils")
-    assert d["recherches_precedentes"][0]["fournisseur"] == "Harvest effectifs"
-
-
 def test_cascade_elargie_admet_avec_account56_et_refuse_les_preuves_historiques(monkeypatch):
     from decimal import Decimal
     from prospection import acquisition_elargie as module
     from prospection.envoi_campagne import adresse_admise
-    a = fiche("a", "000000000000001", site="https://a.example")
+    a = fiche("a", "000000000000001", site="https://a.example", linkedin="https://www.linkedin.com/company/a")
     b = fiche("b", "000000000000002")
-    c = fiche("c", "000000000000003", site="https://c.example")
-    fiches = {x["kerix"]: x for x in (a, b, c)}
+    c = fiche("c", "000000000000003", site="https://c.example", linkedin="https://www.linkedin.com/company/c")
+    d = fiche("d", "000000000000004", site="https://d.example", linkedin="https://www.linkedin.com/company/d")
+    profil_d = "https://www.linkedin.com/in/luc"
+    fiches = {x["kerix"]: x for x in (a, b, c, d)}
     appels = []
 
     class ActeursElargis(Acteurs):
@@ -382,12 +305,21 @@ def test_cascade_elargie_admet_avec_account56_et_refuse_les_preuves_historiques(
                  "companyDomain": "a.example", "email": "camille@a.example"},
                 {"firstName": "Dani", "title": "Assistante", "companyName": "autre",
                  "companyDomain": "c.example", "email": "dani@c.example"},
+                {"linkedinUrl": profil_d, "companyDomain": "d.example", "email": "ancien@d.example"},
             ]
         if acteur == PIPELINE:
             return []
+        if acteur == EFFECTIFS:
+            assert entree["companies"] == [c["linkedin"]]
+            return [{"email": "paul@c.example", "linkedinUrl": "https://www.linkedin.com/in/paul",
+                     "currentPosition": [{"position": "Comptable", "company": {"website": c["site"]}}]}]
+        if acteur == PROFILS:
+            assert entree["urls"] == [profil_d]
+            return [{"email": "luc@d.example", "linkedinUrl": profil_d,
+                     "currentPosition": [{"position": "Comptable", "company": {"website": d["site"]}}]}]
         if acteur == ACTEUR_VERIFICATION:
             return [{**account56_ok(a), "result": "catch_all", "quality": "risky"}
-                    if a.endswith("@c.example") else account56_ok(a)
+                    if a in {"dani@c.example", "ancien@d.example"} else account56_ok(a)
                     for a in entree["emails"]]
         return []
 
@@ -400,14 +332,17 @@ def test_cascade_elargie_admet_avec_account56_et_refuse_les_preuves_historiques(
         if e["ice"] == b["ice"] else [],
     ))
     crm = Twenty(API())
-    graphe = graphe_acquisition(Kerix(), crm, ActeursElargis(jeux), elargi=True, fiche=fiches.__getitem__)
-    bilan = graphe.invoke({"source": list(fiches), "rubrique": "21300", "taille": 3, "graine": 4, "campagne": "A"})
-    assert {d["adresse_admise"] for d in bilan["admis"]} == {"camille@a.example", "contact@b.example"}
-    assert all(not d["linkedin"] for d in bilan["admis"])
-    assert len(bilan["candidats"]) == 3
+    graphe = graphe_acquisition(Kerix(), crm, ActeursElargis(jeux), fiche=fiches.__getitem__)
+    bilan = graphe.invoke({"source": list(fiches), "rubrique": "21300", "taille": 4, "graine": 4, "campagne": "A"})
+    assert {d["adresse_admise"] for d in bilan["admis"]} == {
+        "camille@a.example", "contact@b.example", "paul@c.example", "luc@d.example",
+    }
+    assert sum(not d["linkedin"] for d in bilan["admis"]) == 2
+    assert len(bilan["candidats"]) == 6
     assert [(acteur, entree["emails"]) for acteur, entree in appels if acteur == ACTEUR_VERIFICATION] == [
-        (ACTEUR_VERIFICATION, ["camille@a.example", "contact@b.example", "dani@c.example"])]
-    assert bilan["bilan"]["verdicts_verification"] == {"accepte": 2, "risque": 1}
+        (ACTEUR_VERIFICATION, ["ancien@d.example", "camille@a.example", "contact@b.example", "dani@c.example"]),
+        (ACTEUR_VERIFICATION, ["luc@d.example", "paul@c.example"])]
+    assert bilan["bilan"]["verdicts_verification"] == {"accepte": 4, "risque": 2}
     contact = next(d for d in bilan["admis"] if d["adresse_admise"] == "camille@a.example")
     p = crm.record("people", contact["twenty_id"])
     assert adresse_admise(p) == "camille@a.example"
@@ -417,3 +352,23 @@ def test_cascade_elargie_admet_avec_account56_et_refuse_les_preuves_historiques(
                      {**preuve, "brut": {**preuve["brut"], "result": "catch_all"}}):
         invalide = {**contact, "verifications": [modifiee]}
         assert adresse_admise({**p, "prospectingDossier": json.dumps(invalide)}) is None
+
+def test_rejet_recent_invalide_le_dossier_et_empeche_sa_readmission_depuis_un_ancien_lot():
+    from prospection.envoi_campagne import adresse_admise
+
+    crm = Twenty(API())
+    entreprise, = crm.importer_entreprises([fiche("a", "000000000000001")])[0]
+    contact = dossier(entreprise)
+    adresse = contact["adresse_admise"]
+    valide, = contact["verifications"]
+    valide["date"] = "2026-11-26T12:00:00Z"
+    admis, = crm.admettre("A", [contact])
+    rejet = {**valide, "date": "2026-11-27T12:00:00Z", "verdict": "rejete",
+             "brut": {"email": adresse, "result": "invalid"}, "provenance": {"run": "second"}}
+    crm.actualiser_rejets({adresse: rejet})
+    assert adresse_admise(crm.record("people", admis["twenty_id"])) is None
+    assert crm.admettre("A", [contact]) == []
+    valide["date"] = "2026-11-28T12:00:00Z"
+    crm.admettre("A", [contact])
+    crm.actualiser_rejets({adresse: rejet})
+    assert adresse_admise(crm.record("people", admis["twenty_id"])) == adresse

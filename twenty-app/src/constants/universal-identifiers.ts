@@ -1,5 +1,5 @@
 export const APP_DISPLAY_NAME = 'Twenty app';
-export const APP_DESCRIPTION = '';
+export const APP_DESCRIPTION = 'Import de contacts et d’entreprises depuis un tableur dans Twenty.';
 export const APPLICATION_UNIVERSAL_IDENTIFIER = '703ad1cf-7362-4354-9a12-3d6d4b562ba1';
 export const DEFAULT_ROLE_UNIVERSAL_IDENTIFIER = '67f6d6fc-d1d6-4ac7-97fd-0a69553dc88a';
 export const MAIN_PAGE_FRONT_COMPONENT_UNIVERSAL_IDENTIFIER =
