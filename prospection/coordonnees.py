@@ -77,14 +77,14 @@ def boite_standard(mail, e):
     return libelle in noms
 
 
-def boites_publiees(e):
+def boites_publiees(e, *, standard_uniquement=True):
     resultat = {}
     site, linkedin = domaine(e.get("site")), page_entreprise(e.get("linkedin"))
     for f in e.get("coordonnees_documentees", []):
         if f.get("champ") != "email":
             continue
         mail = f["valeur"].casefold()
-        if not email_complet(mail) or not boite_standard(mail, e):
+        if not email_complet(mail) or (standard_uniquement and not boite_standard(mail, e)):
             continue
         hote = mail.partition("@")[2]
         officielle = ((f["origine"] == "Site officiel" and site and domaine(f["url"]) == site)

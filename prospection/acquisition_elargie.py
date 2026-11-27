@@ -69,7 +69,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
 
     def identites(etat, *, cible=False):
         entreprises = etat["entreprises"]
-        recherche = [e for e in entreprises if not cible or not e["site"] or not boites_publiees(e)]
+        recherche = [e for e in entreprises if not cible or not e["site"] or not boites_publiees(e, standard_uniquement=False)]
         if not recherche:
             return {}
         (lignes, provenance), attentes = rechercher(etat, SERP, entree_serp(recherche, cible),
