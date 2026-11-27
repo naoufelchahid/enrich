@@ -1,12 +1,12 @@
 """Cascade Kerix sans condition de poste ni de LinkedIn personnel."""
-import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 
 from .collecte import url_personnelle
-from .identite_serp import EMAIL, SERP, coordonnees_site, entree_serp, resoudre
+from .coordonnees import boite_standard, boites_publiees, completer
+from .identite_serp import SERP, email_complet, entree_serp, explorer, fiche_kerix, resoudre
 from .verification_account56 import ACTEUR_VERIFICATION, plafond_lot, verifier_lot
 from .recherche_dirigeants import adresses, domaine, normaliser, page_entreprise, postes, premier
 
@@ -41,7 +41,7 @@ def candidats_elargis(lignes, fournisseur, entreprises, provenance, personnes=No
         domaine_atteste = domaine(e["site"])
         if not domaine_atteste and p["linkedin"] and p["linkedin"] == page_entreprise(e["linkedin"]):
             domaine_atteste = p["domaine"]
-        recevables = [a for a in mails if EMAIL.fullmatch(a) and a.partition("@")[2] == domaine_atteste]
+        recevables = [a for a in mails if email_complet(a) and a.partition("@")[2] == domaine_atteste]
         resultats.append({
             "linkedin": url, "prenom": premier(ligne, "firstName", "first_name"),
             "nom": premier(ligne, "lastName", "last_name"), "entreprise": e,
@@ -54,53 +54,62 @@ def candidats_elargis(lignes, fournisseur, entreprises, provenance, personnes=No
 
 
 def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
-                    lire_site=coordonnees_site, resoudre_serp=resoudre):
+                    boite_recours=True, lire_site=explorer, resoudre_serp=resoudre):
     pipeline, profils, effectifs = acteurs
 
     def rechercher(etat, acteur, entree, maximum, volume):
         reserve = plafond_lot(3 * len(etat["entreprises"]))
         try:
-            return budget.lignes(acteur, entree, maximum, verification=reserve, max_items=volume), []
+            # Les lots de recherche doivent laisser de quoi vérifier aussi une boîte de recours.
+            priorite_recours = reserve if boite_recours and acteur in (profils, effectifs) else Decimal(0)
+            return budget.lignes(acteur, entree, maximum, verification=reserve + priorite_recours,
+                                max_items=volume), []
         except (OSError, ValueError, RuntimeError) as erreur:
             return ([], None), [{"fournisseur": acteur, "motif": str(erreur)}]
 
-    def identites(etat):
+    def identites(etat, *, cible=False):
         entreprises = etat["entreprises"]
-        inconnues = [e for e in entreprises if not (domaine(e["site"]) or page_entreprise(e["linkedin"]))]
-        if not inconnues:
+        recherche = [e for e in entreprises if not cible or not e["site"] or not boites_publiees(e, standard_uniquement=False)]
+        if not recherche:
             return {}
-        (lignes, provenance), attentes = rechercher(etat, SERP, entree_serp(inconnues),
-                                                    "0.50", len(inconnues))
-        preuves = resoudre_serp(inconnues, lignes)
-        entreprises = [{**e, **preuves.get(e["ice"], {})} for e in entreprises]
+        (lignes, provenance), attentes = rechercher(etat, SERP, entree_serp(recherche, cible),
+                                                    "0.50", len(recherche))
+        preuves = resoudre_serp(recherche, lignes, cible)
+        resultat = []
         for e in entreprises:
-            if e["ice"] not in preuves:
-                continue
-            charge = {"kerixDossier": json.dumps(e, ensure_ascii=False)}
-            if e["site"]:
-                charge["domainName"] = {"primaryLinkUrl": e["site"]}
-            if e["linkedin"]:
-                charge["linkedinLink"] = {"primaryLinkUrl": e["linkedin"]}
-            crm.modifier("companies", e["twenty_id"], **charge)
-        return {"entreprises": entreprises, "attentes": etat["attentes"] + attentes,
-                "serp": {"entreprises_recherchees": len(inconnues), "identites_confirmees": len(preuves),
-                         "provenance": provenance}}
+            faits = [*fiche_kerix(e), *preuves.get(e["ice"], [])]
+            nouvelle = completer(crm, e, faits)
+            resultat.append(nouvelle)
+        suivi = dict(etat.get("serp") or {})
+        suivi["seconde" if cible else "premiere"] = {
+            "entreprises_recherchees": len(recherche), "provenance": provenance,
+            "sites_identifies": sum(bool(n["site"]) and not e["site"] for e, n in zip(entreprises, resultat))}
+        return {"entreprises": resultat, "attentes": etat["attentes"] + attentes, "serp": suivi}
 
     def sites(etat):
-        entreprises = etat["entreprises"]
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            par_entreprise = list(pool.map(lire_site, entreprises))
-        candidats = []
-        for e, mails in zip(entreprises, par_entreprise):
-            if mails:
-                candidats.append({
-                    "linkedin": None, "prenom": "", "nom": "", "entreprise": e,
-                    "poste": {"titre": ""}, "fournisseur": "Site officiel",
-                    "provenance": {"sources": mails}, "profil": {"coordonnees": mails},
-                    "adresses": [m["email"] for m in mails], "adresses_recevables": [m["email"] for m in mails],
-                    "nom_confirme": False,
-                })
-        return {"candidats": etat["candidats"] + candidats}
+        def visiter(e):
+            if not e["site"] or e["site"] == (etat.get("sites_visites") or {}).get(e["ice"]):
+                return e
+            return completer(crm, e, lire_site(e))
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            entreprises = list(pool.map(visiter, etat["entreprises"]))
+        return {"entreprises": entreprises, "sites_visites": {
+            e["ice"]: e["site"] for e in entreprises if e["site"]}}
+
+    def candidats_recours(etat):
+        candidats = list(etat["candidats"])
+        if boite_recours:
+            for e in etat["entreprises"]:
+                mails = boites_publiees(e)
+                if mails:
+                    candidats.append({
+                        "linkedin": None, "prenom": "", "nom": "", "entreprise": e,
+                        "poste": {"titre": ""}, "fournisseur": "Coordonnées publiées",
+                        "provenance": {"sources": mails}, "profil": {"coordonnees": mails},
+                        "adresses": [m["email"] for m in mails], "adresses_recevables": [m["email"] for m in mails],
+                        "nom_confirme": False,
+                    })
+        return {"candidats": candidats}
 
     def rattacher(etat, acteur, nom, entree, es, maximum, volume, personnes=None):
         (lignes, preuve), incidents = rechercher(etat, acteur, entree, maximum, volume)
@@ -135,7 +144,7 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
                             for a in c["adresses_recevables"])}
         return [e for e in etat["entreprises"] if e["ice"] not in couvertes]
 
-    def verifier(etat, *, premier_passage=False):
+    def verifier(etat, *, premier_passage=False, recours=False):
         controles = dict(etat["controles"])
         deja_admis = {a["entreprise"]["ice"] for a in etat["admis"]}
         par_ice, ices_par_adresse = defaultdict(dict), defaultdict(set)
@@ -148,7 +157,10 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
             ice = c["entreprise"]["ice"]
             for a in c["adresses_recevables"]:
                 ices_par_adresse[a].add(ice)
-                if not premier_passage and a not in controles and c["fournisseur"] not in ("Harvest profils", "Harvest effectifs"):
+                partagee = c["fournisseur"] == "Coordonnées publiées" or boite_standard(a, c["entreprise"])
+                if partagee != recours:
+                    continue
+                if not recours and not premier_passage and a not in controles and c["fournisseur"] not in ("Harvest profils", "Harvest effectifs"):
                     continue
                 precedent = par_ice[ice].get(a)
                 if not precedent or priorite(c, a) < priorite(precedent, a):
@@ -194,7 +206,9 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
                                  "verifications": preuves})
                 continue
             admissions.append({
-                **candidat, "adresse_admise": adresse, "verifications": preuves, "mode_verification": "apify",
+                **candidat, "linkedin": None if recours else candidat["linkedin"],
+                "prenom": "" if recours else candidat["prenom"], "nom": "" if recours else candidat["nom"],
+                "boite_de_recours": recours, "adresse_admise": adresse, "verifications": preuves, "mode_verification": "apify",
                 "decision_initiale": {"verdict": "qualifie", "email": adresse, "motif": "Adresse rattachée à l’entreprise"},
                 "decision_finale": {"verdict": "admis", "email": adresse, "motif": "Boîte validée par Account56"},
             })
@@ -244,8 +258,11 @@ def noeuds_elargis(crm, budget, *, harvest_profils, harvest_effectifs, acteurs,
 
     return [
         ("resoudre_identites", identites), ("lire_sites_officiels", sites),
+        ("recherche_ciblee", lambda e: identites(e, cible=True)), ("explorer_nouveaux_sites", sites),
+        ("collecter_boites_recours", candidats_recours),
         ("pipeline_domaine", par_domaine), ("pipeline_nom", par_nom),
         ("verifier_avant_harvest", lambda etat: verifier(etat, premier_passage=True)),
         ("harvest_profils_elargis", par_profil), ("harvest_effectifs_elargis", par_employeur),
         ("verifier_adresses", verifier),
+        *([("verifier_boites_recours", lambda e: verifier(e, recours=True))] if boite_recours else []),
     ]

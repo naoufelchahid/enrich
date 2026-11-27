@@ -1,1 +1,2 @@
 langgraph==1.2.24
+phonenumberslite==9.0.44

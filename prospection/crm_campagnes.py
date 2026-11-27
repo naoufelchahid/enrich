@@ -88,11 +88,19 @@ class Twenty:
                 exclusions.extend({"kerix": f["kerix"], "motif": motif, "ice": ice} for f in groupe)
                 continue
             fiche = groupe[0]
+            if existantes[ice]:
+                # Relire les champs conservés par le CRM pour les passages suivants.
+                ligne = self.record("companies", existantes[ice][0]["id"])
+                dossier = charger_json(ligne.get("kerixDossier")) or {}
+                fiche = {**dossier, **fiche,
+                         "site": (ligne.get("domainName") or {}).get("primaryLinkUrl") or fiche["site"],
+                         "linkedin": (ligne.get("linkedinLink") or {}).get("primaryLinkUrl") or fiche["linkedin"]}
+                groupe[0] = fiche
             charge = {"name": fiche["nom"], "kerixIce": ice, "kerixUrl": fiche["kerix"],
                       "kerixDossier": json.dumps(fiche, ensure_ascii=False)}
-            if fiche["site"]:
+            if fiche["site"] and not existantes[ice]:
                 charge["domainName"] = {"primaryLinkUrl": fiche["site"]}
-            if fiche["linkedin"]:
+            if fiche["linkedin"] and not existantes[ice]:
                 charge["linkedinLink"] = {"primaryLinkUrl": fiche["linkedin"]}
             charges.append(charge)
         ids = {ligne["kerixIce"]: ligne["id"] for ligne in self.lots("companies", charges, upsert=True)}

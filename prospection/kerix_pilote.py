@@ -88,6 +88,7 @@ def _acquerir(args, crm):
         budget = Budget(db, Apify(os.environ["APIFY_TOKEN"]), configuration["plafond_usd"])
         recours = configuration.get("recours", {})
         graphe = graphe_acquisition(kerix, crm, budget, fiche=fiches.__getitem__,
+                                    boite_recours=recours.get("boite_entreprise", True),
                                     harvest_profils=recours.get("harvest_profils", True),
                                     harvest_effectifs=recours.get("harvest_effectifs", True))
         resultat = graphe.invoke(etat)

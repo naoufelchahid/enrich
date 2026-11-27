@@ -8,7 +8,7 @@ def decision(instructions, prompt, dossier, schema):
     with tempfile.TemporaryDirectory() as cwd:
         commande = ["codex", "app-server", "-c", 'web_search="disabled"']
         config = {"mcp_servers": {},
-                  "shell_environment_policy": {"inherit": "none"}}
+                  "model_reasoning_effort": "low", "shell_environment_policy": {"inherit": "none"}}
         with subprocess.Popen(commande, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, text=True) as serveur:
             try:
